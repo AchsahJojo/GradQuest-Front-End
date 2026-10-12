@@ -11,7 +11,6 @@ import SavedApplicationsScreen from "../screens/SavedApplicationsScreen";
 import ReminderScreen from "../screens/ReminderScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import ProfileIntake from "../screens/profileIntake";
-import GoogleWelcomeScreen from "../screens/GoogleWelcomeScreen";
 import LoadingScreen from "../screens/LoadingScreen";
 
 const Stack = createNativeStackNavigator();
@@ -93,7 +92,6 @@ export default function RootNavigator() {
       {/* Onboarding & main app */}
       <Stack.Screen name="ProfileIntake" component={ProfileIntake} />
       <Stack.Screen name="Tabs" component={DashboardTabs} />
-      <Stack.Screen name="GoogleWelcome" component={GoogleWelcomeScreen} />
     </Stack.Navigator>
   );
 }
