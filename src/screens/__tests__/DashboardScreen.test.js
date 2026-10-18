@@ -53,9 +53,15 @@ describe("DashboardScreen", () => {
         { id: 2, name: "Local College" },
       ],
     };
-    const { getByText } = renderDashboard();
+    const { getByText, getAllByText } = renderDashboard();
 
     expect(getByText("Stanford University")).toBeTruthy();
+    fireEvent.press(getAllByText("Statement")[0]);
+    expect(mockNavigate).toHaveBeenCalledWith("Statement", {
+      schoolId: 1,
+      schoolName: "Stanford University",
+      programName: "Computer Science MS",
+    });
     expect(getByText("Computer Science MS")).toBeTruthy();
     expect(getByText("Program info")).toBeTruthy();
     expect(getByText("No website")).toBeTruthy();
