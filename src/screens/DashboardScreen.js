@@ -79,27 +79,45 @@ export default function DashboardScreen() {
   // Any top schools passed in via navigation (e.g., after saving preferences)
   const routeTopSchools = route?.params?.topSchools ?? null;
 
-  // Local state for the recommendations shown on the dashboard
-  const [topSchools, setTopSchools] = useState(
-    Array.isArray(routeTopSchools) ? routeTopSchools : []
-  );
+  const parseTopPayload = (payload) => {
+    if (!payload) return { matches: [], message: null, nextOpenTerm: null };
+    if (Array.isArray(payload)) {
+      return { matches: payload, message: null, nextOpenTerm: null };
+    }
+    if (Array.isArray(payload.matches)) {
+      return {
+        matches: payload.matches,
+        message: payload.message ?? null,
+        nextOpenTerm: payload.nextOpenTerm ?? null,
+      };
+    }
+    return { matches: [], message: null, nextOpenTerm: null };
+  };
+
+  const initialTop = parseTopPayload(routeTopSchools);
+  const [topSchools, setTopSchools] = useState(initialTop.matches);
+  const [matchMessage, setMatchMessage] = useState(initialTop.message);
+  const [nextOpenTerm, setNextOpenTerm] = useState(initialTop.nextOpenTerm);
   const [loadingTop, setLoadingTop] = useState(false);
 
   // Keep local state in sync when we navigate here with fresh results
   useEffect(() => {
-    if (Array.isArray(routeTopSchools) && routeTopSchools.length > 0) {
-      setTopSchools(routeTopSchools);
+    const parsed = parseTopPayload(routeTopSchools);
+    if (parsed.matches.length > 0 || parsed.message) {
+      setTopSchools(parsed.matches);
+      setMatchMessage(parsed.message);
+      setNextOpenTerm(parsed.nextOpenTerm);
     }
   }, [routeTopSchools]);
 
-  // On first load after authentication, fetch the user's top 5 schools
+  // On first load after authentication, fetch ranked matches (top N from backend).
   // using the preferences already saved from Profile Intake.
   useEffect(() => {
     let cancelled = false;
 
     const fetchTopSchools = async () => {
-      // If we already have results from navigation, don't refetch.
-      if (Array.isArray(routeTopSchools) && routeTopSchools.length > 0) {
+      const routed = parseTopPayload(routeTopSchools);
+      if (routed.matches.length > 0) {
         return;
       }
 
@@ -122,8 +140,11 @@ export default function DashboardScreen() {
         }
 
         const json = await res.json();
-        if (!cancelled && Array.isArray(json) && json.length > 0) {
-          setTopSchools(json);
+        const parsed = parseTopPayload(json);
+        if (!cancelled) {
+          setTopSchools(parsed.matches);
+          setMatchMessage(parsed.message);
+          setNextOpenTerm(parsed.nextOpenTerm);
         }
       } catch (err) {
         if (!cancelled) {
@@ -242,6 +263,24 @@ export default function DashboardScreen() {
     if (!ok) setSaveError("We couldn't save that school. Please try again.");
   };
 
+  const formatTermLine = (item) => {
+    if (!item?.term || !item?.startYear) return null;
+    const termLabel =
+      String(item.term).charAt(0) +
+      String(item.term).slice(1).toLowerCase();
+    let line = `${termLabel} ${item.startYear}`;
+    if (item.deadline) {
+      const d = new Date(item.deadline + "T00:00:00");
+      const pretty = d.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+      line += ` · Apply by ${pretty}`;
+    }
+    return line;
+  };
+
   const renderItem = ({ item }) => {
     const id = item.id ?? item.schoolId ?? item.name;
     const saved = savedApps.find((a) => a.id === id);
@@ -254,12 +293,43 @@ export default function DashboardScreen() {
       item.programType ??
       "Program info";
     const website =
-      item.websiteUrl ?? item.website ?? item.link ?? null;
+      item.programPageUrl ??
+      item.websiteUrl ??
+      item.website ??
+      item.link ??
+      null;
+    const termLine = formatTermLine(item);
+    const reasons = Array.isArray(item.matchReasons)
+      ? item.matchReasons.filter(Boolean).join("; ")
+      : null;
+    const verified = item.lastVerified
+      ? `Data verified ${item.lastVerified}`
+      : null;
 
     return (
       <View style={s.card}>
+        <View style={s.rankRow}>
+          {item.rank != null ? (
+            <Text style={s.rankBadge}>#{item.rank}</Text>
+          ) : null}
+          {item.matchScore != null ? (
+            <Text style={s.scoreText}>
+              Match {Number(item.matchScore).toFixed(0)}
+            </Text>
+          ) : null}
+          {item.closingSoon ? (
+            <Text style={s.closingSoon}>Closing soon</Text>
+          ) : null}
+        </View>
         <Text style={s.cardTitle}>{name}</Text>
         <Text style={s.cardSub}>{program}</Text>
+        {termLine ? <Text style={s.termLine}>{termLine}</Text> : null}
+        {reasons ? <Text style={s.reasons}>{reasons}</Text> : null}
+        {verified ? (
+          <Pressable onPress={() => website && openUrl(website)}>
+            <Text style={s.verified}>{verified}</Text>
+          </Pressable>
+        ) : null}
 
         <View style={s.cardActions}>
           {website ? (
@@ -314,6 +384,30 @@ export default function DashboardScreen() {
         data={dataToShow}
         keyExtractor={keyForItem}
         ListEmptyComponent={renderEmpty}
+        ListHeaderComponent={
+          matchMessage || nextOpenTerm ? (
+            <View style={s.matchBanner}>
+              {matchMessage ? (
+                <Text style={s.matchBannerText}>{matchMessage}</Text>
+              ) : null}
+              {nextOpenTerm ? (
+                <Text style={s.nextTermText}>
+                  Next open term suggestion:{" "}
+                  {String(nextOpenTerm.term || "")
+                    .charAt(0)
+                    .toUpperCase() +
+                    String(nextOpenTerm.term || "")
+                      .slice(1)
+                      .toLowerCase()}{" "}
+                  {nextOpenTerm.startYear}
+                  {nextOpenTerm.schoolName
+                    ? ` · ${nextOpenTerm.schoolName}`
+                    : ""}
+                </Text>
+              ) : null}
+            </View>
+          ) : null
+        }
         renderItem={renderItem}
       />
 
@@ -461,6 +555,67 @@ const s = StyleSheet.create({
   cardSub: {
     color: PALETTE.subtext,
     marginTop: 3,
+  },
+  rankRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 6,
+  },
+  rankBadge: {
+    fontWeight: "800",
+    color: PALETTE.blueDark,
+    fontSize: 13,
+  },
+  scoreText: {
+    fontSize: 12,
+    color: PALETTE.subtext,
+    fontWeight: "600",
+  },
+  closingSoon: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#B45309",
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: "hidden",
+  },
+  termLine: {
+    marginTop: 6,
+    fontSize: 13,
+    color: PALETTE.blueDark,
+    fontWeight: "600",
+  },
+  reasons: {
+    marginTop: 4,
+    fontSize: 12,
+    color: PALETTE.subtext,
+  },
+  verified: {
+    marginTop: 4,
+    fontSize: 11,
+    color: PALETTE.blue,
+    textDecorationLine: "underline",
+  },
+  matchBanner: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: "#F0F7FC",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DCE8F2",
+  },
+  matchBannerText: {
+    fontSize: 13,
+    color: PALETTE.textDark,
+  },
+  nextTermText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: PALETTE.subtext,
   },
   cardActions: {
     flexDirection: "row",

@@ -175,7 +175,13 @@ export default function ProfileIntake() {
   const [capstone, setCapstone] = React.useState<boolean>(false);
   const [timeType, setTimeType] = React.useState<string>("Full-time");
   const [format, setFormat] = React.useState<string>("In person");
+  // GRE preference (not a score): off = only non-REQUIRED programs; on = GRE + non-GRE OK
   const [gre, setGre] = React.useState<boolean>(false);
+  const [desiredTerm, setDesiredTerm] = React.useState<string | null>(null);
+  const [desiredStartYear, setDesiredStartYear] = React.useState<string | null>(
+    null,
+  );
+  const [isInternational, setIsInternational] = React.useState<boolean>(false);
 
   const countries = [
     "United States",
@@ -185,11 +191,18 @@ export default function ProfileIntake() {
     "Other",
   ];
   const years = ["2025", "2026", "2027", "2028"];
-  const states = ["CA", "NY", "TX", "WA", "Other"];
+  const states = ["CA", "NY", "TX", "WA", "AZ", "Other"];
   const privateOptions = ["Private", "Public"];
   const timeOptions = ["Full-time", "Part-time"];
   const formatOptions = ["In person", "Hybrid", "Online"];
-  const majorOptions = ["Math", "English", "Computer Science"];
+  const majorOptions = [
+    "Computer Science",
+    "Software Engineering",
+    "Computer Engineering",
+    "Data Science",
+  ];
+  const termOptions = ["Fall", "Spring", "Summer", "Winter"];
+  const startYearOptions = ["2026", "2027", "2028"];
 
   const [submitting, setSubmitting] = React.useState(false);
   const [formError, setFormError] = React.useState<string | null>(null);
@@ -255,6 +268,29 @@ export default function ProfileIntake() {
               setGpaText(String(raw.gpa));
             }
             if (raw.targetCountry) setCountry(raw.targetCountry);
+            if (raw.grePreferred !== undefined && raw.grePreferred !== null) {
+              setGre(Boolean(raw.grePreferred));
+            }
+            if (raw.desiredTerm) {
+              const t = String(raw.desiredTerm).toUpperCase();
+              setDesiredTerm(
+                t === "FALL"
+                  ? "Fall"
+                  : t === "SPRING"
+                    ? "Spring"
+                    : t === "SUMMER"
+                      ? "Summer"
+                      : t === "WINTER"
+                        ? "Winter"
+                        : null,
+              );
+            }
+            if (raw.desiredStartYear != null) {
+              setDesiredStartYear(String(raw.desiredStartYear));
+            }
+            if (raw.isInternational !== undefined && raw.isInternational !== null) {
+              setIsInternational(Boolean(raw.isInternational));
+            }
             break;
           } catch (e) {
             continue;
@@ -311,6 +347,14 @@ export default function ProfileIntake() {
               : "ONLINE",
         gpa: finalGpa,
         requirementType: capstone ? "CAPSTONE" : "NEITHER",
+        grePreferred: gre,
+        desiredTerm: desiredTerm
+          ? String(desiredTerm).toUpperCase()
+          : null,
+        desiredStartYear: desiredStartYear
+          ? parseInt(desiredStartYear, 10)
+          : null,
+        isInternational,
       };
 
       const saveRes = await apiFetch("/api/preferences", {
@@ -377,15 +421,23 @@ export default function ProfileIntake() {
       if (effective.targetCountry) setCountry(effective.targetCountry);
 
       // Preferences are saved; if the top-5 lookup fails the dashboard fetches it itself.
-      let topSchools = null;
+      let topPayload = null;
       try {
         const topRes = await apiFetch("/api/schools/top5");
-        if (topRes.ok) topSchools = await topRes.json();
+        if (topRes.ok) {
+          const json = await topRes.json();
+          // Track A returns { matches, message, nextOpenTerm }; legacy was a bare array.
+          topPayload = Array.isArray(json)
+            ? { matches: json }
+            : json?.matches
+              ? json
+              : null;
+        }
       } catch (e) {}
 
       navigation.navigate("Tabs", {
         screen: "Dashboard",
-        params: topSchools ? { topSchools } : undefined,
+        params: topPayload ? { topSchools: topPayload } : undefined,
       });
     } catch (err) {
       setFormError("We couldn't reach the server. Check your connection and try again.");
@@ -481,6 +533,45 @@ export default function ProfileIntake() {
             <Switch value={capstone} onValueChange={setCapstone} />
           </View>
 
+          <View style={styles.inlineField}>
+            <Text style={styles.label}>
+              Open to GRE-required programs?
+            </Text>
+            <Switch value={gre} onValueChange={setGre} />
+          </View>
+          <Text style={styles.hint}>
+            Off: only programs that do not require the GRE. On: GRE-required
+            and non-GRE programs are both eligible. We do not collect GRE
+            scores.
+          </Text>
+
+          <View style={styles.inlineField}>
+            <Text style={styles.label}>International student (F-1)?</Text>
+            <Switch
+              value={isInternational}
+              onValueChange={setIsInternational}
+            />
+          </View>
+          <Text style={styles.hint}>
+            Used only to pick the application deadline (international vs
+            domestic). Budget matching still uses domestic full-program cost in
+            this version.
+          </Text>
+
+          <SelectField
+            label="Desired start term (optional)"
+            value={desiredTerm}
+            options={termOptions}
+            onChange={setDesiredTerm}
+          />
+
+          <SelectField
+            label="Desired start year (optional)"
+            value={desiredStartYear}
+            options={startYearOptions}
+            onChange={setDesiredStartYear}
+          />
+
           <SelectField
             label="Full-time or Part-time"
             value={timeType}
@@ -550,6 +641,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#555555",
     marginBottom: 12,
+  },
+  hint: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginBottom: 12,
+    marginTop: -4,
   },
   field: {
     marginBottom: 20,

@@ -74,7 +74,10 @@ describe("ProfileIntake", () => {
     fireEvent.press(getByText("Save profile"));
 
     await waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("Tabs", { screen: "Dashboard", params: { topSchools } })
+      expect(mockNavigate).toHaveBeenCalledWith("Tabs", {
+        screen: "Dashboard",
+        params: { topSchools: { matches: topSchools } },
+      })
     );
     const [saveUrl, saveOptions] = global.fetch.mock.calls.find(([, o]) => o?.method === "POST");
     expect(saveUrl).toMatch(/\/api\/preferences$/);

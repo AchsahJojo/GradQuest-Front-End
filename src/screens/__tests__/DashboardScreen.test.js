@@ -63,12 +63,45 @@ describe("DashboardScreen", () => {
   });
 
   test("fetches top schools for the signed-in session without a userId", async () => {
-    global.fetch.mockImplementationOnce(() => okJson([{ id: 7, name: "San Jose State University" }]));
+    global.fetch.mockImplementationOnce(() =>
+      okJson({ matches: [{ id: 7, name: "San Jose State University" }] })
+    );
     const { findByText } = renderDashboard();
 
     expect(await findByText("San Jose State University")).toBeTruthy();
     expect(fetchedUrls()[0]).toMatch(/\/api\/schools\/top5$/);
     expect(global.fetch.mock.calls[0][1]).toMatchObject({ credentials: "include" });
+  });
+
+  test("shows rank, term line, and match banner from Track A payload", () => {
+    mockRouteParams = {
+      topSchools: {
+        matches: [
+          {
+            id: 6,
+            rank: 1,
+            matchScore: 88,
+            name: "CSU Fullerton",
+            programName: "Computer Science, M.S.",
+            term: "SPRING",
+            startYear: 2027,
+            deadline: "2026-12-01",
+            closingSoon: false,
+            matchReasons: ["Fits budget", "Matches location"],
+            lastVerified: "2026-10-17",
+          },
+        ],
+        message: "Showing 1 match — try enabling GRE, widening location, or another start term.",
+        nextOpenTerm: { term: "FALL", startYear: 2027, schoolName: "SJSU" },
+      },
+    };
+    const { getByText } = renderDashboard();
+    expect(getByText("#1")).toBeTruthy();
+    expect(getByText("CSU Fullerton")).toBeTruthy();
+    expect(getByText(/Spring 2027/)).toBeTruthy();
+    expect(getByText(/Fits budget/)).toBeTruthy();
+    expect(getByText(/Showing 1 match/)).toBeTruthy();
+    expect(getByText(/Next open term suggestion/)).toBeTruthy();
   });
 
   test("saving and removing a school creates and deletes its reminder", async () => {
