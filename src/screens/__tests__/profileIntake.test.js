@@ -36,12 +36,35 @@ describe("ProfileIntake", () => {
     mockMe = { authenticated: false };
   });
 
+  const selectByLabel = (screen, label) => {
+    const matches = [];
+    const walk = (node) => {
+      if (!node || typeof node === "string") return;
+      if (node.props?.label === label && Array.isArray(node.props.options)) {
+        matches.push(node);
+      }
+      (node.children || []).forEach(walk);
+    };
+    walk(screen.UNSAFE_root);
+    return matches[0];
+  };
+
   test("renders the full intake form", () => {
     const { getByText, getByLabelText } = render(<ProfileIntake />);
     expect(getByText("Profile Intake")).toBeTruthy();
     expect(getByText("Location State (required)")).toBeTruthy();
     expect(getByLabelText("Expected Graduation Date")).toBeTruthy();
     expect(getByText("Save profile")).toBeTruthy();
+  });
+
+  test("offers apply years 2027-2029 and catalog states", () => {
+    const screen = render(<ProfileIntake />);
+    const year = selectByLabel(screen, "School Year to Apply");
+    const state = selectByLabel(screen, "Location State (required)");
+
+    expect(year.props.value).toBe("2027");
+    expect(year.props.options).toEqual(["2027", "2028", "2029"]);
+    expect(state.props.options).toEqual(["CA", "AZ", "NV", "Other"]);
   });
 
   test("accepts a budget value", () => {

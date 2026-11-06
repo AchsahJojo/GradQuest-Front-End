@@ -37,6 +37,7 @@ export default function StatementScreen() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +46,8 @@ export default function StatementScreen() {
         setLoadError("Open this screen from a matched or saved school.");
         return;
       }
+      setStatus(null);
+      setLoadError("");
       try {
         const res = await apiFetch("/api/sop/programs", {
           method: "POST",
@@ -65,10 +68,13 @@ export default function StatementScreen() {
     return () => {
       cancelled = true;
     };
-  }, [schoolId]);
+  }, [schoolId, reloadKey]);
 
   const noStatement = status?.sopRequired === false;
   const unverified = status && status.sopRequired == null;
+  const canRetry =
+    schoolId != null &&
+    (Boolean(loadError) || status?.pageStatus === "error" || status?.pageStatus === "unavailable");
 
   async function uploadFile() {
     setActionError("");
@@ -161,6 +167,15 @@ export default function StatementScreen() {
         </Text>
       ) : null}
       {status?.message ? <Text style={s.note}>{status.message}</Text> : null}
+      {canRetry ? (
+        <Pressable
+          style={s.secondary}
+          onPress={() => setReloadKey((key) => key + 1)}
+          accessibilityLabel="Try again"
+        >
+          <Text style={s.secondaryText}>Try again</Text>
+        </Pressable>
+      ) : null}
 
       {status ? (
         <View>
@@ -170,7 +185,7 @@ export default function StatementScreen() {
             </Text>
           ) : (
             <Text style={s.note}>
-              Upload a resume and, if the application prompt is behind a login, paste that prompt. The draft is one opening paragraph.
+              Upload a resume and, if the application prompt is behind a login, paste that prompt. The draft is a full statement you can edit.
             </Text>
           )}
 
@@ -204,7 +219,7 @@ export default function StatementScreen() {
 
           <Pressable style={s.primary} onPress={onDraft} disabled={busy}>
             <Text style={s.primaryText}>
-              {busy ? "Drafting..." : noStatement ? "Draft optional motivation" : "Draft opening paragraph"}
+              {busy ? "Drafting..." : noStatement ? "Draft optional motivation" : "Draft full statement"}
             </Text>
           </Pressable>
           {actionError ? <Text style={s.error}>{actionError}</Text> : null}

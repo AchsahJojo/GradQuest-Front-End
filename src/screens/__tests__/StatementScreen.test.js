@@ -46,6 +46,33 @@ describe("StatementScreen", () => {
     expect(await findByText("Draft optional motivation")).toBeTruthy();
   });
 
+  test("re-reads the program page when Try again is pressed after an error", async () => {
+    let programCalls = 0;
+    global.fetch.mockImplementation((url) => {
+      if (String(url).endsWith("/api/sop/programs")) {
+        programCalls += 1;
+        return jsonResponse(
+          programCalls === 1
+            ? {
+                sopRequired: true,
+                pageStatus: "error",
+                message: "The program page didn't respond after several tries. Try again in a few minutes.",
+              }
+            : { sopRequired: true, pageStatus: "ok", message: "Read the public program page." },
+        );
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, findByLabelText, queryByLabelText } = render(<StatementScreen />);
+    expect(await findByText(/didn't respond after several tries/)).toBeTruthy();
+    fireEvent.press(await findByLabelText("Try again"));
+
+    expect(await findByText("Read the public program page.")).toBeTruthy();
+    expect(programCalls).toBe(2);
+    expect(queryByLabelText("Try again")).toBeNull();
+  });
+
   test("drafts one cited opening and labels it as an outline", async () => {
     mockParams = { schoolId: 3, schoolName: "Cal Poly San Luis Obispo", programName: "Computer Science, M.S." };
     global.fetch.mockImplementation((url) => {
@@ -71,7 +98,7 @@ describe("StatementScreen", () => {
     const { findByText, getByLabelText } = render(<StatementScreen />);
     expect(await findByText("Paste the prompt if you have it. GradQuest will not guess it.")).toBeTruthy();
     fireEvent.changeText(getByLabelText("Resume text"), "Built a compiler");
-    fireEvent.press(await findByText("Draft opening paragraph"));
+    fireEvent.press(await findByText("Draft full statement"));
 
     expect(await findByText("Draft outline — edit before you use it")).toBeTruthy();
     expect(await findByText(/\[R1\]/)).toBeTruthy();
