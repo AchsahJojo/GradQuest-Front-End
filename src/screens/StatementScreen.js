@@ -7,6 +7,7 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { apiFetch } from "../lib/api";
@@ -21,6 +22,8 @@ const PALETTE = {
 };
 
 const DRAFT_LABEL = "Draft outline — edit before you use it";
+const WEAK_OVERLAP =
+  "We found little connection between your résumé and this program's faculty or courses. The draft will leave those parts for you to write.";
 
 export default function StatementScreen() {
   const navigation = useNavigation();
@@ -35,7 +38,10 @@ export default function StatementScreen() {
   const [resumeText, setResumeText] = useState("");
   const [fileName, setFileName] = useState("");
   const [draft, setDraft] = useState("");
+  const [report, setReport] = useState(null);
+  const [removedIds, setRemovedIds] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [matching, setMatching] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -110,29 +116,69 @@ export default function StatementScreen() {
     setFileName(asset.name || "Resume uploaded");
   }
 
+  async function storePastedResume() {
+    if (!resumeText.trim()) return true;
+    const resumeRes = await apiFetch("/api/sop/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schoolId, text: resumeText.trim() }),
+    });
+    if (!resumeRes.ok) {
+      setActionError("The resume text could not be stored.");
+      return false;
+    }
+    return true;
+  }
+
+  function togglePair(pairId) {
+    setRemovedIds((current) =>
+      current.includes(pairId) ? current.filter((id) => id !== pairId) : [...current, pairId],
+    );
+  }
+
+  async function onFindMatches() {
+    setActionError("");
+    setMatching(true);
+    try {
+      if (!(await storePastedResume())) return;
+      const res = await apiFetch("/api/sop/overlap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolId }),
+      });
+      if (!res.ok) {
+        setActionError("Matches could not be loaded right now.");
+        return;
+      }
+      const body = await res.json();
+      setReport(body);
+      setRemovedIds([]);
+    } catch {
+      setActionError("Matches could not be loaded right now.");
+    } finally {
+      setMatching(false);
+    }
+  }
+
   async function onDraft() {
     setActionError("");
     setBusy(true);
     try {
-      if (resumeText.trim()) {
-        const resumeRes = await apiFetch("/api/sop/resume", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ schoolId, text: resumeText.trim() }),
-        });
-        if (!resumeRes.ok) {
-          setActionError("The resume text could not be stored.");
-          return;
-        }
+      if (!(await storePastedResume())) return;
+      const payload = {
+        schoolId,
+        mode: noStatement ? "motivation" : "opening",
+        pastedPrompt: pastedPrompt.trim(),
+      };
+      if (report) {
+        payload.pairIds = (report.pairs ?? [])
+          .filter((pair) => !removedIds.includes(pair.pairId))
+          .map((pair) => pair.pairId);
       }
       const res = await apiFetch("/api/sop/draft", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          schoolId,
-          mode: noStatement ? "motivation" : "opening",
-          pastedPrompt: pastedPrompt.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         setActionError("A draft could not be written right now.");
@@ -167,6 +213,9 @@ export default function StatementScreen() {
         </Text>
       ) : null}
       {status?.message ? <Text style={s.note}>{status.message}</Text> : null}
+      {typeof status?.verifiedAsOf === "string" && status.verifiedAsOf !== "" ? (
+        <Text style={s.note}>{`Verified as of ${status.verifiedAsOf}`}</Text>
+      ) : null}
       {canRetry ? (
         <Pressable
           style={s.secondary}
@@ -217,7 +266,40 @@ export default function StatementScreen() {
             </>
           )}
 
-          <Pressable style={s.primary} onPress={onDraft} disabled={busy}>
+          <Pressable
+            style={s.secondary}
+            onPress={onFindMatches}
+            disabled={busy || matching}
+            accessibilityLabel="Find matches"
+          >
+            <Text style={s.secondaryText}>Find matches</Text>
+          </Pressable>
+          {report?.weak ? <Text style={s.note}>{WEAK_OVERLAP}</Text> : null}
+          {report?.pairs?.map((pair) => {
+            const removed = removedIds.includes(pair.pairId);
+            return (
+              <View key={pair.pairId} style={s.matchCard}>
+                <Text style={s.matchName}>{pair.factName}</Text>
+                <Text style={s.note}>{pair.resumeText}</Text>
+                <Text
+                  style={s.link}
+                  accessibilityRole="link"
+                  onPress={() => Linking.openURL(pair.sourceUrl)}
+                >
+                  {pair.sourceUrl}
+                </Text>
+                <Pressable
+                  style={s.secondary}
+                  onPress={() => togglePair(pair.pairId)}
+                  accessibilityLabel={`${removed ? "Restore" : "Remove"} ${pair.factName}`}
+                >
+                  <Text style={s.secondaryText}>{removed ? "Restore" : "Remove"}</Text>
+                </Pressable>
+              </View>
+            );
+          })}
+
+          <Pressable style={s.primary} onPress={onDraft} disabled={busy || matching}>
             <Text style={s.primaryText}>
               {busy ? "Drafting..." : noStatement ? "Draft optional motivation" : "Draft full statement"}
             </Text>
@@ -292,4 +374,13 @@ const s = StyleSheet.create({
   },
   draftLabel: { fontWeight: "800", color: PALETTE.blueDark, marginBottom: 8 },
   draftBody: { color: PALETTE.textDark, lineHeight: 22 },
+  matchCard: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#DCE8F2",
+    borderRadius: 12,
+    padding: 12,
+  },
+  matchName: { fontWeight: "800", color: PALETTE.blueDark },
+  link: { marginTop: 6, color: PALETTE.blue, fontWeight: "700" },
 });
