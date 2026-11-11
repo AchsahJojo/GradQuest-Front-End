@@ -25,6 +25,17 @@ const DRAFT_LABEL = "Draft outline — edit before you use it";
 const WEAK_OVERLAP =
   "We found little connection between your résumé and this program's faculty or courses. The draft will leave those parts for you to write.";
 
+async function failureMessage(res, fallback) {
+  try {
+    const body = await res.json();
+    if (typeof body.message === "string" && body.message.trim()) return body.message;
+    if (typeof body.error === "string" && body.error.trim()) return body.error;
+  } catch {
+    // The response had no JSON body.
+  }
+  return fallback;
+}
+
 export default function StatementScreen() {
   const navigation = useNavigation();
   const route = useRoute();
@@ -44,6 +55,8 @@ export default function StatementScreen() {
   const [matching, setMatching] = useState(false);
   const [actionError, setActionError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deletedNote, setDeletedNote] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +129,37 @@ export default function StatementScreen() {
     setFileName(asset.name || "Resume uploaded");
   }
 
+  async function onDeleteResume() {
+    setActionError("");
+    setDeletedNote("");
+    setBusy(true);
+    try {
+      const res = await apiFetch("/api/sop/resume", { method: "DELETE" });
+      let body = {};
+      try {
+        body = await res.json();
+      } catch {
+        body = {};
+      }
+      if (!res.ok || body.deleted !== true) {
+        const failed = Array.isArray(body.failed) && body.failed.length > 0 ? ` (${body.failed.join(", ")})` : "";
+        setActionError(`The résumé was not deleted${failed}.`);
+        return;
+      }
+      setResumeText("");
+      setFileName("");
+      setReport(null);
+      setDraft("");
+      setRemovedIds([]);
+      setDeletedNote("Stored résumé deleted.");
+    } catch {
+      setActionError("The résumé was not deleted.");
+    } finally {
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  }
+
   async function storePastedResume() {
     if (!resumeText.trim()) return true;
     const resumeRes = await apiFetch("/api/sop/resume", {
@@ -147,7 +191,8 @@ export default function StatementScreen() {
         body: JSON.stringify({ schoolId }),
       });
       if (!res.ok) {
-        setActionError("Matches could not be loaded right now.");
+        setReport(null);
+        setActionError(await failureMessage(res, "Matches could not be loaded right now."));
         return;
       }
       const body = await res.json();
@@ -181,7 +226,7 @@ export default function StatementScreen() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        setActionError("A draft could not be written right now.");
+        setActionError(await failureMessage(res, "A draft could not be written right now."));
         return;
       }
       const body = await res.json();
@@ -225,6 +270,43 @@ export default function StatementScreen() {
           <Text style={s.secondaryText}>Try again</Text>
         </Pressable>
       ) : null}
+      {schoolId != null && (status || loadError) ? (
+        confirmDelete ? (
+          <View>
+            <Text style={s.note}>Delete the stored résumé? This removes it from GradQuest.</Text>
+            <Pressable
+              style={s.secondary}
+              onPress={onDeleteResume}
+              disabled={busy || matching}
+              accessibilityLabel="Confirm delete résumé"
+            >
+              <Text style={s.secondaryText}>Delete résumé</Text>
+            </Pressable>
+            <Pressable
+              style={s.secondary}
+              onPress={() => setConfirmDelete(false)}
+              disabled={busy || matching}
+              accessibilityLabel="Cancel résumé deletion"
+            >
+              <Text style={s.secondaryText}>Cancel</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            style={s.secondary}
+            onPress={() => {
+              setDeletedNote("");
+              setConfirmDelete(true);
+            }}
+            disabled={busy || matching}
+            accessibilityLabel="Delete my résumé"
+          >
+            <Text style={s.secondaryText}>Delete my résumé</Text>
+          </Pressable>
+        )
+      ) : null}
+      {deletedNote ? <Text style={s.note}>{deletedNote}</Text> : null}
+      {actionError ? <Text style={s.error}>{actionError}</Text> : null}
 
       {status ? (
         <View>
@@ -304,14 +386,16 @@ export default function StatementScreen() {
               {busy ? "Drafting..." : noStatement ? "Draft optional motivation" : "Draft full statement"}
             </Text>
           </Pressable>
-          {actionError ? <Text style={s.error}>{actionError}</Text> : null}
-
           {draft ? (
             <View style={s.draftCard}>
               <Text style={s.draftLabel}>{DRAFT_LABEL}</Text>
-              <Text style={s.draftBody} selectable>
-                {draft}
-              </Text>
+              <TextInput
+                style={s.draftBody}
+                value={draft}
+                onChangeText={setDraft}
+                multiline
+                accessibilityLabel={DRAFT_LABEL}
+              />
             </View>
           ) : null}
         </View>
@@ -373,7 +457,12 @@ const s = StyleSheet.create({
     padding: 14,
   },
   draftLabel: { fontWeight: "800", color: PALETTE.blueDark, marginBottom: 8 },
-  draftBody: { color: PALETTE.textDark, lineHeight: 22 },
+  draftBody: {
+    color: PALETTE.textDark,
+    lineHeight: 22,
+    minHeight: 160,
+    textAlignVertical: "top",
+  },
   matchCard: {
     marginTop: 12,
     borderWidth: 1,

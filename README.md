@@ -9,7 +9,7 @@ Expo app for students comparing CS-related master's programs. Sign in, save pref
 - **Dashboard** loads `GET /api/schools/top5`. That route returns up to 10 ranked programs.
 - **Saved** is the schools you asked to be reminded about. Saving a school creates its deadline reminder.
 - **Reminders** lists those deadlines.
-- **Statement**, opened from a match or a saved school, drafts one opening paragraph (or an optional motivation paragraph). It is an outline to edit, not an essay to submit.
+- **Statement**, opened from a match or a saved school, shows matched faculty and courses, a Verified as of date, and a full draft in an editable field. Markers such as [STUDENT: add detail] stay in the text so the student can replace them instead of the model inventing a fact. When there is little overlap it says so. A program that does not require a statement offers an optional motivation draft instead. Delete my résumé asks for confirmation, then removes the stored résumé.
 
 ## Stack
 
