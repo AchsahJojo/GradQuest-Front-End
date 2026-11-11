@@ -26,3 +26,4 @@ ios/
 Thumbs.db
 .vscode/
 .idea/
+.worktrees/

@@ -167,7 +167,7 @@ export default function ProfileIntake() {
   const [gpaText, setGpaText] = React.useState<string>("");
 
   const [country, setCountry] = React.useState<string | null>(null);
-  const [applyYear, setApplyYear] = React.useState<string>("2026");
+  const [applyYear, setApplyYear] = React.useState<string>("2027");
   const [gradDate, setGradDate] = React.useState<string>("");
   const [isPrivate, setIsPrivate] = React.useState<boolean | null>(null);
   const [stateLocation, setStateLocation] = React.useState<string | null>(null);
@@ -190,8 +190,8 @@ export default function ProfileIntake() {
     "Australia",
     "Other",
   ];
-  const years = ["2025", "2026", "2027", "2028"];
-  const states = ["CA", "NY", "TX", "WA", "AZ", "Other"];
+  const years = ["2027", "2028", "2029"];
+  const states = ["CA", "AZ", "NV", "Other"];
   const privateOptions = ["Private", "Public"];
   const timeOptions = ["Full-time", "Part-time"];
   const formatOptions = ["In person", "Hybrid", "Online"];

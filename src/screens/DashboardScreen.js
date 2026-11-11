@@ -346,6 +346,20 @@ export default function DashboardScreen() {
           )}
 
           <TouchableOpacity
+            onPress={() =>
+              navigation.navigate("Statement", {
+                schoolId: id,
+                schoolName: name,
+                programName: program,
+              })
+            }
+            style={s.statementBtn}
+            accessibilityLabel={`Draft statement for ${name}`}
+          >
+            <Text style={s.statementBtnText}>Statement</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={() => toggleSaved(item, id, saved)}
             style={saved ? s.removeBtn : s.saveBtn}
           >
@@ -635,6 +649,16 @@ const s = StyleSheet.create({
     fontWeight: "700",
   },
 
+  statementBtn: {
+    backgroundColor: "#FFF8E1",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  statementBtnText: {
+    color: PALETTE.blueDark,
+    fontWeight: "700",
+  },
   saveBtn: {
     backgroundColor: "#E6F8FF",
     paddingHorizontal: 12,

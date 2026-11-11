@@ -12,6 +12,7 @@ import ReminderScreen from "../screens/ReminderScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 import ProfileIntake from "../screens/profileIntake";
 import LoadingScreen from "../screens/LoadingScreen";
+import StatementScreen from "../screens/StatementScreen";
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -92,6 +93,7 @@ export default function RootNavigator() {
       {/* Onboarding & main app */}
       <Stack.Screen name="ProfileIntake" component={ProfileIntake} />
       <Stack.Screen name="Tabs" component={DashboardTabs} />
+      <Stack.Screen name="Statement" component={StatementScreen} />
     </Stack.Navigator>
   );
 }

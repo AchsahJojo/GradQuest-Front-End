@@ -8,7 +8,7 @@ import {
   Linking,
   Image,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useSavedApps } from "../context/SavedAppsContext";
 
 const PALETTE = {
@@ -21,6 +21,7 @@ const PALETTE = {
 };
 
 export default function SavedApplicationsScreen() {
+  const navigation = useNavigation<any>();
   const { savedApps, removeSchool, reloadSaved } = useSavedApps();
   const [removeError, setRemoveError] = React.useState<string | null>(null);
 
@@ -52,6 +53,20 @@ export default function SavedApplicationsScreen() {
           <Text style={s.visitBtnText}>Visit</Text>
         </Pressable>
       ) : null}
+
+      <Pressable
+        style={s.statementBtn}
+        onPress={() =>
+          navigation.navigate("Statement", {
+            schoolId: item.id,
+            schoolName: item.name,
+            programName: item.company,
+          })
+        }
+        accessibilityLabel={`Draft statement for ${item.name}`}
+      >
+        <Text style={s.statementBtnText}>Statement</Text>
+      </Pressable>
 
       {/* Remove Button */}
       <Pressable
@@ -194,6 +209,16 @@ const s = StyleSheet.create({
   },
   visitBtnText: {
     color: PALETTE.white,
+    fontWeight: "700",
+  },
+  statementBtn: {
+    backgroundColor: "#FFF8E1",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+  statementBtnText: {
+    color: PALETTE.blueDark,
     fontWeight: "700",
   },
   removeBtn: {
