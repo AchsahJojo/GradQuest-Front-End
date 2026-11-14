@@ -95,14 +95,16 @@ describe("StatementScreen", () => {
       return jsonResponse({}, false);
     });
 
-    const { findByText, getByLabelText } = render(<StatementScreen />);
+    const { findByText, findByDisplayValue, getByLabelText } = render(<StatementScreen />);
     expect(await findByText("Paste the prompt if you have it. GradQuest will not guess it.")).toBeTruthy();
     fireEvent.changeText(getByLabelText("Resume text"), "Built a compiler");
     fireEvent.press(await findByText("Draft full statement"));
 
     expect(await findByText("Draft outline — edit before you use it")).toBeTruthy();
-    expect(await findByText(/\[R1\]/)).toBeTruthy();
-    expect(await findByText(/\[STUDENT: add detail\]/)).toBeTruthy();
+    const draftBox = await findByDisplayValue(/\[R1\]/);
+    expect(draftBox).toBeTruthy();
+    fireEvent.changeText(draftBox, "I built a compiler [R1]. I wrote this sentence myself.");
+    expect(await findByDisplayValue("I built a compiler [R1]. I wrote this sentence myself.")).toBeTruthy();
     await waitFor(() => {
       const draftCall = global.fetch.mock.calls.find(([url]) => String(url).endsWith("/api/sop/draft"));
       expect(JSON.parse(draftCall[1].body).mode).toBe("opening");
@@ -168,6 +170,32 @@ describe("StatementScreen", () => {
       const overlapCall = global.fetch.mock.calls.find(([url]) => String(url).endsWith("/api/sop/overlap"));
       expect(JSON.parse(overlapCall[1].body)).toEqual({ schoolId: 6 });
     });
+  });
+
+  test("shows a temporary matching error instead of the little-overlap note when overlap fails", async () => {
+    global.fetch.mockImplementation((url) => {
+      const href = String(url);
+      if (href.endsWith("/api/sop/programs")) {
+        return jsonResponse({ sopRequired: true, pageStatus: "ok", verifiedAsOf: "2026-03-01T00:00:00Z" });
+      }
+      if (href.endsWith("/api/sop/resume")) return jsonResponse({ stored: true, chunks: 1 });
+      if (href.endsWith("/api/sop/overlap")) {
+        return jsonResponse({ message: "Matching is temporarily unavailable, try again later" }, false);
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, getByLabelText, queryByText } = render(<StatementScreen />);
+    expect(await findByText("Verified as of 2026-03-01T00:00:00Z")).toBeTruthy();
+    fireEvent.changeText(getByLabelText("Resume text"), "I studied distributed systems in a lab.");
+    fireEvent.press(await findByText("Find matches"));
+
+    expect(await findByText("Matching is temporarily unavailable, try again later")).toBeTruthy();
+    expect(
+      queryByText(
+        "We found little connection between your résumé and this program's faculty or courses. The draft will leave those parts for you to write.",
+      ),
+    ).toBeNull();
   });
 
   test("lists each pair with its source link and omits a removed pair from the draft", async () => {
@@ -271,5 +299,46 @@ describe("StatementScreen", () => {
     const { findByText, queryByText } = render(<StatementScreen />);
     expect(await findByText("Read the public program page.")).toBeTruthy();
     expect(queryByText(/Verified as of/)).toBeNull();
+  });
+
+  test("Delete my résumé stays available when the program check fails", async () => {
+    global.fetch.mockImplementation((url) => {
+      if (String(url).endsWith("/api/sop/programs")) return jsonResponse({}, false);
+      return jsonResponse({}, false);
+    });
+
+    const { findByLabelText, findByText } = render(<StatementScreen />);
+    expect(await findByText("We couldn't check this program's statement requirement.")).toBeTruthy();
+    expect(await findByLabelText("Delete my résumé")).toBeTruthy();
+  });
+
+  test("Delete my résumé asks for confirmation before DELETE /api/sop/resume", async () => {
+    global.fetch.mockImplementation((url, options) => {
+      const href = String(url);
+      if (href.endsWith("/api/sop/programs")) {
+        return jsonResponse({ sopRequired: true, pageStatus: "ok", message: "Read the public program page." });
+      }
+      if (href.endsWith("/api/sop/resume") && options?.method === "DELETE") {
+        return jsonResponse({ deleted: true });
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, findByLabelText, queryByLabelText } = render(<StatementScreen />);
+    fireEvent.press(await findByLabelText("Delete my résumé"));
+    expect(await findByText("Delete the stored résumé? This removes it from GradQuest.")).toBeTruthy();
+    expect(global.fetch.mock.calls.some(([, options]) => options?.method === "DELETE")).toBe(false);
+
+    fireEvent.press(await findByLabelText("Cancel résumé deletion"));
+    expect(queryByLabelText("Confirm delete résumé")).toBeNull();
+    expect(global.fetch.mock.calls.some(([, options]) => options?.method === "DELETE")).toBe(false);
+
+    fireEvent.press(await findByLabelText("Delete my résumé"));
+    fireEvent.press(await findByLabelText("Confirm delete résumé"));
+    await waitFor(() => {
+      const deleteCall = global.fetch.mock.calls.find(([, options]) => options?.method === "DELETE");
+      expect(deleteCall[0]).toContain("/api/sop/resume");
+    });
+    expect(await findByText("Stored résumé deleted.")).toBeTruthy();
   });
 });

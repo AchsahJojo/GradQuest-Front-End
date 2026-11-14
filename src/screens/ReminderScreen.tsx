@@ -13,6 +13,16 @@ import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { apiFetch } from "../lib/api";
 
+// Same local-date parse as DashboardScreen: "2026-12-01" must stay December 1.
+// new Date("2026-12-01") is UTC midnight, which is November 30 in Pacific time.
+export function parseReminderDate(value: string | null | undefined): Date {
+  if (!value) return new Date(NaN);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(value + "T00:00:00");
+  }
+  return new Date(value);
+}
+
   const PALETTE = {
   blueDark: "#053F7C",
   blue: "#0061A8",
@@ -97,7 +107,7 @@ export default function ReminderScreen() {
   const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
 
   const processedReminders = reminders.map((item) => {
-    const due = new Date(item.dueDate);
+    const due = parseReminderDate(item.dueDate);
     const diff = due.getTime() - today.getTime();
     return { ...item, urgent: diff <= TWO_WEEKS_MS && diff > 0 };
   });
@@ -156,7 +166,7 @@ export default function ReminderScreen() {
           </View>
 
           <Text style={s.dateText}>
-            Due: {new Date(item.dueDate).toLocaleDateString()}
+            Due: {parseReminderDate(item.dueDate).toLocaleDateString()}
           </Text>
 
           {item.description && (
