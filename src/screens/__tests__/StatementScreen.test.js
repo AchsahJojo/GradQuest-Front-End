@@ -341,4 +341,153 @@ describe("StatementScreen", () => {
     });
     expect(await findByText("Stored résumé deleted.")).toBeTruthy();
   });
+
+  test("loads a saved draft on mount and shows the saved-draft affordance", async () => {
+    global.fetch.mockImplementation((url) => {
+      const href = String(url);
+      if (href.endsWith("/api/sop/programs")) {
+        return jsonResponse({ sopRequired: true, pageStatus: "ok", message: "Read the public program page." });
+      }
+      if (href.includes("/api/statement-drafts")) {
+        return jsonResponse({
+          body: "I studied compilers and want this program.",
+          updatedAt: "2026-11-19T12:00:00Z",
+        });
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, findByDisplayValue, findByLabelText } = render(<StatementScreen />);
+    expect(await findByText("Saved draft")).toBeTruthy();
+    expect(await findByDisplayValue("I studied compilers and want this program.")).toBeTruthy();
+    expect(await findByLabelText("Save draft")).toBeTruthy();
+    expect(await findByLabelText("Delete draft")).toBeTruthy();
+    await waitFor(() => {
+      const getDraft = global.fetch.mock.calls.find(
+        ([url, options]) => String(url).includes("/api/statement-drafts") && (!options || !options.method || options.method === "GET"),
+      );
+      expect(getDraft[0]).toContain("schoolId=6");
+    });
+  });
+
+  test("Save draft PUTs the current text and shows a brief confirmation", async () => {
+    global.fetch.mockImplementation((url, options) => {
+      const href = String(url);
+      if (href.endsWith("/api/sop/programs")) {
+        return jsonResponse({ sopRequired: true, pageStatus: "ok", message: "Read the public program page." });
+      }
+      if (href.includes("/api/statement-drafts") && options?.method === "PUT") {
+        return jsonResponse({ body: "Edited draft text.", updatedAt: "2026-11-19T12:05:00Z" });
+      }
+      if (href.includes("/api/statement-drafts")) {
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+      }
+      if (href.endsWith("/api/sop/draft")) {
+        return jsonResponse({ paragraph: "Generated outline.", label: "Draft outline — edit before you use it" });
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, findByLabelText } = render(<StatementScreen />);
+    fireEvent.press(await findByText("Draft full statement"));
+    const draftBox = await findByLabelText("Draft outline — edit before you use it");
+    fireEvent.changeText(draftBox, "Edited draft text.");
+    fireEvent.press(await findByLabelText("Save draft"));
+
+    expect(await findByText("Draft saved.")).toBeTruthy();
+    await waitFor(() => {
+      const putCall = global.fetch.mock.calls.find(
+        ([url, options]) => String(url).includes("/api/statement-drafts") && options?.method === "PUT",
+      );
+      expect(JSON.parse(putCall[1].body)).toEqual({ schoolId: 6, body: "Edited draft text." });
+    });
+    expect(await findByLabelText("Delete draft")).toBeTruthy();
+  });
+
+  test("Delete draft asks for confirmation then DELETEs and clears the local draft", async () => {
+    global.fetch.mockImplementation((url, options) => {
+      const href = String(url);
+      if (href.endsWith("/api/sop/programs")) {
+        return jsonResponse({ sopRequired: true, pageStatus: "ok", message: "Read the public program page." });
+      }
+      if (href.includes("/api/statement-drafts") && options?.method === "DELETE") {
+        return jsonResponse({});
+      }
+      if (href.includes("/api/statement-drafts")) {
+        return jsonResponse({
+          body: "Persisted draft from last visit.",
+          updatedAt: "2026-11-19T12:00:00Z",
+        });
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, findByLabelText, findByDisplayValue, queryByDisplayValue, queryByLabelText } =
+      render(<StatementScreen />);
+    expect(await findByDisplayValue("Persisted draft from last visit.")).toBeTruthy();
+    fireEvent.press(await findByLabelText("Delete draft"));
+    expect(await findByText("Delete the saved draft? This removes it from GradQuest.")).toBeTruthy();
+    expect(
+      global.fetch.mock.calls.some(
+        ([url, options]) => String(url).includes("/api/statement-drafts") && options?.method === "DELETE",
+      ),
+    ).toBe(false);
+
+    fireEvent.press(await findByLabelText("Cancel draft deletion"));
+    expect(queryByLabelText("Confirm delete draft")).toBeNull();
+
+    fireEvent.press(await findByLabelText("Delete draft"));
+    fireEvent.press(await findByLabelText("Confirm delete draft"));
+    await waitFor(() => {
+      const deleteCall = global.fetch.mock.calls.find(
+        ([url, options]) => String(url).includes("/api/statement-drafts") && options?.method === "DELETE",
+      );
+      expect(deleteCall[0]).toContain("schoolId=6");
+    });
+    expect(await findByText("Saved draft deleted.")).toBeTruthy();
+    expect(queryByDisplayValue("Persisted draft from last visit.")).toBeNull();
+    expect(queryByLabelText("Delete draft")).toBeNull();
+  });
+
+  test("Generate does not PUT a statement draft until Save", async () => {
+    global.fetch.mockImplementation((url, options) => {
+      const href = String(url);
+      if (href.endsWith("/api/sop/programs")) {
+        return jsonResponse({ sopRequired: true, pageStatus: "ok", message: "Read the public program page." });
+      }
+      if (href.includes("/api/statement-drafts") && options?.method === "PUT") {
+        return jsonResponse({ body: "I studied compilers [R1].", updatedAt: "2026-11-19T12:05:00Z" });
+      }
+      if (href.includes("/api/statement-drafts")) {
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+      }
+      if (href.endsWith("/api/sop/draft")) {
+        return jsonResponse({ paragraph: "I studied compilers [R1].", label: "Draft outline — edit before you use it" });
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, findByLabelText, queryByLabelText } = render(<StatementScreen />);
+    fireEvent.press(await findByText("Draft full statement"));
+    expect(await findByLabelText("Save draft")).toBeTruthy();
+    expect(queryByLabelText("Delete draft")).toBeNull();
+
+    await waitFor(() => {
+      expect(global.fetch.mock.calls.some(([url]) => String(url).endsWith("/api/sop/draft"))).toBe(true);
+    });
+    expect(
+      global.fetch.mock.calls.some(
+        ([url, options]) => String(url).includes("/api/statement-drafts") && options?.method === "PUT",
+      ),
+    ).toBe(false);
+
+    fireEvent.press(await findByLabelText("Save draft"));
+    await waitFor(() => {
+      expect(
+        global.fetch.mock.calls.some(
+          ([url, options]) => String(url).includes("/api/statement-drafts") && options?.method === "PUT",
+        ),
+      ).toBe(true);
+    });
+  });
 });
