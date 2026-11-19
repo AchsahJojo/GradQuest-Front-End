@@ -57,6 +57,9 @@ export default function StatementScreen() {
   const [reloadKey, setReloadKey] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deletedNote, setDeletedNote] = useState("");
+  const [draftPersisted, setDraftPersisted] = useState(false);
+  const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
+  const [draftNote, setDraftNote] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +91,38 @@ export default function StatementScreen() {
       cancelled = true;
     };
   }, [schoolId, reloadKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDraft() {
+      if (schoolId == null) return;
+      setDraftPersisted(false);
+      setDraftNote("");
+      setConfirmDeleteDraft(false);
+      try {
+        const res = await apiFetch(`/api/statement-drafts?schoolId=${encodeURIComponent(schoolId)}`);
+        if (cancelled) return;
+        if (res.status === 404 || !res.ok) return;
+        let body = {};
+        try {
+          body = await res.json();
+        } catch {
+          body = {};
+        }
+        if (typeof body.body === "string" && body.body.trim()) {
+          setDraft(body.body);
+          setDraftPersisted(true);
+          setDraftNote("Saved draft");
+        }
+      } catch {
+        // Missing or unreachable draft is fine; generate/save still works.
+      }
+    }
+    loadDraft();
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolId]);
 
   const noStatement = status?.sopRequired === false;
   const unverified = status && status.sopRequired == null;
@@ -150,6 +185,9 @@ export default function StatementScreen() {
       setFileName("");
       setReport(null);
       setDraft("");
+      setDraftPersisted(false);
+      setDraftNote("");
+      setConfirmDeleteDraft(false);
       setRemovedIds([]);
       setDeletedNote("Stored résumé deleted.");
     } catch {
@@ -157,6 +195,54 @@ export default function StatementScreen() {
     } finally {
       setBusy(false);
       setConfirmDelete(false);
+    }
+  }
+
+  async function onSaveDraft() {
+    if (schoolId == null || !draft.trim()) return;
+    setActionError("");
+    setDraftNote("");
+    setBusy(true);
+    try {
+      const res = await apiFetch("/api/statement-drafts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schoolId, body: draft }),
+      });
+      if (!res.ok) {
+        setActionError(await failureMessage(res, "The draft could not be saved."));
+        return;
+      }
+      setDraftPersisted(true);
+      setDraftNote("Draft saved.");
+    } catch {
+      setActionError("The draft could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDeleteDraft() {
+    if (schoolId == null) return;
+    setActionError("");
+    setDraftNote("");
+    setBusy(true);
+    try {
+      const res = await apiFetch(`/api/statement-drafts?schoolId=${encodeURIComponent(schoolId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok && res.status !== 404) {
+        setActionError(await failureMessage(res, "The saved draft could not be deleted."));
+        return;
+      }
+      setDraft("");
+      setDraftPersisted(false);
+      setDraftNote("Saved draft deleted.");
+    } catch {
+      setActionError("The saved draft could not be deleted.");
+    } finally {
+      setBusy(false);
+      setConfirmDeleteDraft(false);
     }
   }
 
@@ -386,6 +472,11 @@ export default function StatementScreen() {
               {busy ? "Drafting..." : noStatement ? "Draft optional motivation" : "Draft full statement"}
             </Text>
           </Pressable>
+          {draftPersisted && draftNote === "Saved draft" ? (
+            <Text style={s.note} accessibilityLabel="Saved draft">
+              Saved draft
+            </Text>
+          ) : null}
           {draft ? (
             <View style={s.draftCard}>
               <Text style={s.draftLabel}>{DRAFT_LABEL}</Text>
@@ -398,6 +489,49 @@ export default function StatementScreen() {
               />
             </View>
           ) : null}
+          {draft.trim() ? (
+            <Pressable
+              style={s.secondary}
+              onPress={onSaveDraft}
+              disabled={busy || matching}
+              accessibilityLabel="Save draft"
+            >
+              <Text style={s.secondaryText}>Save draft</Text>
+            </Pressable>
+          ) : null}
+          {draftPersisted ? (
+            confirmDeleteDraft ? (
+              <View>
+                <Text style={s.note}>Delete the saved draft? This removes it from GradQuest.</Text>
+                <Pressable
+                  style={s.secondary}
+                  onPress={onDeleteDraft}
+                  disabled={busy || matching}
+                  accessibilityLabel="Confirm delete draft"
+                >
+                  <Text style={s.secondaryText}>Delete draft</Text>
+                </Pressable>
+                <Pressable
+                  style={s.secondary}
+                  onPress={() => setConfirmDeleteDraft(false)}
+                  disabled={busy || matching}
+                  accessibilityLabel="Cancel draft deletion"
+                >
+                  <Text style={s.secondaryText}>Cancel</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={s.secondary}
+                onPress={() => setConfirmDeleteDraft(true)}
+                disabled={busy || matching}
+                accessibilityLabel="Delete draft"
+              >
+                <Text style={s.secondaryText}>Delete draft</Text>
+              </Pressable>
+            )
+          ) : null}
+          {draftNote && draftNote !== "Saved draft" ? <Text style={s.note}>{draftNote}</Text> : null}
         </View>
       ) : null}
     </ScrollView>
