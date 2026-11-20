@@ -111,12 +111,17 @@ describe("DashboardScreen", () => {
   });
 
   test("saving and removing a school creates and deletes its reminder", async () => {
+    mockMe = { authenticated: true, email: "tester@dev.local" };
     mockRouteParams = { topSchools: [{ id: 3, name: "Georgia Tech" }] };
     global.fetch.mockImplementation(() => okJson({}));
-    const { getByText, findByText } = renderDashboard();
+    const { getByText, findByText, getByLabelText } = renderDashboard();
 
     fireEvent.press(getByText("Save"));
+    expect(
+      await findByText("Saved. We’ll email a deadline reminder about 2 weeks before.")
+    ).toBeTruthy();
     fireEvent.press(await findByText("Remove"));
+    fireEvent.press(getByLabelText("Confirm unsave Georgia Tech"));
     await findByText("Save");
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
@@ -126,6 +131,51 @@ describe("DashboardScreen", () => {
     expect(remove[0]).toMatch(/\/api\/reminders\/school\/3$/);
     expect(remove[1]).toMatchObject({ method: "DELETE" });
     expect(fetchedUrls().join(" ")).not.toMatch(/userId/);
+  });
+
+  test("canceling unsave keeps the school saved", async () => {
+    mockMe = { authenticated: true, userId: 1, email: "tester@dev.local" };
+    mockRouteParams = { topSchools: [{ id: 3, name: "Georgia Tech" }] };
+    global.fetch.mockImplementation((url) =>
+      String(url).endsWith("/api/reminders")
+        ? okJson([{ id: 10, schoolId: 3, schoolName: "Georgia Tech" }])
+        : okJson({})
+    );
+    const { findByText, getByLabelText, queryByText } = renderDashboard();
+
+    expect(await findByText("Remove")).toBeTruthy();
+    fireEvent.press(await findByText("Remove"));
+    expect(
+      await findByText(
+        "You won’t get deadline reminder emails for this school anymore."
+      )
+    ).toBeTruthy();
+    fireEvent.press(getByLabelText("Cancel unsave"));
+    await waitFor(() =>
+      expect(
+        queryByText(
+          "You won’t get deadline reminder emails for this school anymore."
+        )
+      ).toBeNull()
+    );
+    expect(await findByText("Remove")).toBeTruthy();
+    const deletes = global.fetch.mock.calls.filter(([, o]) => o?.method === "DELETE");
+    expect(deletes).toHaveLength(0);
+  });
+
+  test("saving with a noreply email prompts Settings for a real address", async () => {
+    mockMe = { authenticated: true, email: "login@github.noreply" };
+    mockRouteParams = { topSchools: [{ id: 3, name: "Georgia Tech" }] };
+    global.fetch.mockImplementation(() => okJson({ id: 1, schoolId: 3 }));
+    const { getByText, findByText } = renderDashboard();
+
+    fireEvent.press(getByText("Save"));
+    expect(
+      await findByText(
+        "Saved. Add a real email in Settings to get deadline reminder emails."
+      )
+    ).toBeTruthy();
+    expect(getByText("Open Settings")).toBeTruthy();
   });
 
   test("schools already saved on the backend show Remove", async () => {

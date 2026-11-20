@@ -20,6 +20,7 @@ import { useSavedApps } from "../context/SavedAppsContext";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { apiFetch } from "../lib/api";
+import UnsaveConfirmModal from "../components/UnsaveConfirmModal";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const PALETTE = {
@@ -65,6 +66,9 @@ export default function DashboardScreen() {
   // saved apps context
   const { savedApps, saveSchool, removeSchool, reloadSaved } = useSavedApps();
   const [saveError, setSaveError] = useState(null);
+  const [saveNote, setSaveNote] = useState(null);
+  const [unsaveTarget, setUnsaveTarget] = useState(null); // { id, name }
+  const [unsaveBusy, setUnsaveBusy] = useState(false);
 
   // Reminders deleted on the Reminders tab unsave their school too.
   useFocusEffect(
@@ -248,19 +252,51 @@ export default function DashboardScreen() {
 
   const toggleSaved = async (item, id, saved) => {
     setSaveError(null);
+    setSaveNote(null);
     if (saved) {
-      if (!(await removeSchool(id))) {
-        setSaveError("We couldn't remove that school. Please try again.");
-      }
+      const name = item.name ?? item.schoolName ?? "Untitled";
+      setUnsaveTarget({ id, name });
       return;
     }
-    const ok = await saveSchool({
+    const result = await saveSchool({
       id,
       name: item.name ?? item.schoolName ?? "Untitled",
       company: item.programName ?? item.program ?? "Program info",
       link: item.websiteUrl ?? item.website ?? null,
     });
-    if (!ok) setSaveError("We couldn't save that school. Please try again.");
+    if (!result?.ok) {
+      setSaveError("We couldn't save that school. Please try again.");
+      return;
+    }
+    if (result.needsEmail) {
+      setSaveNote(
+        "Saved. Add a real email in Settings to get deadline reminder emails."
+      );
+      return;
+    }
+    if (result.deadlineIsPlaceholder) {
+      setSaveNote(
+        "Saved. No published deadline was found — we’ll still send a general awareness reminder."
+      );
+      return;
+    }
+    setSaveNote(
+      "Saved. We’ll email a deadline reminder about 2 weeks before."
+    );
+  };
+
+  const confirmUnsave = async () => {
+    if (!unsaveTarget) return;
+    setUnsaveBusy(true);
+    setSaveError(null);
+    try {
+      if (!(await removeSchool(unsaveTarget.id))) {
+        setSaveError("We couldn't remove that school. Please try again.");
+      }
+      setUnsaveTarget(null);
+    } finally {
+      setUnsaveBusy(false);
+    }
   };
 
   const formatTermLine = (item) => {
@@ -391,6 +427,19 @@ export default function DashboardScreen() {
           {saveError}
         </Text>
       ) : null}
+      {saveNote ? (
+        <View style={s.noteBanner}>
+          <Text style={s.noteText}>{saveNote}</Text>
+          {saveNote.includes("Settings") ? (
+            <Pressable
+              onPress={() => navigation.navigate("Settings", { promptEmail: true })}
+              accessibilityLabel="Go to Settings to add email"
+            >
+              <Text style={s.noteLink}>Open Settings</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* MAIN LIST */}
       <FlatList
@@ -472,6 +521,14 @@ export default function DashboardScreen() {
           </View>
         </View>
       </Modal>
+
+      <UnsaveConfirmModal
+        visible={!!unsaveTarget}
+        schoolName={unsaveTarget?.name}
+        onCancel={() => !unsaveBusy && setUnsaveTarget(null)}
+        onConfirm={confirmUnsave}
+        busy={unsaveBusy}
+      />
 
       {/* Tutorial overlay */}
       <Modal
@@ -684,6 +741,19 @@ const s = StyleSheet.create({
     fontWeight: "600",
     paddingHorizontal: 16,
     paddingTop: 12,
+  },
+  noteBanner: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  noteText: {
+    color: PALETTE.blueDark,
+    fontWeight: "600",
+  },
+  noteLink: {
+    marginTop: 6,
+    color: PALETTE.blue,
+    fontWeight: "800",
   },
 
   // Shared overlay for both models modal and tutorial modal
