@@ -1,13 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { apiFetch } from "../lib/api";
+import { isDeliverableEmail } from "../lib/email";
 
 // Saved schools are derived from the user's reminders: saving a school creates its
 // deadline reminder, and removing it deletes that reminder.
 
 const SavedAppsContext = createContext({
   savedApps: [],
-  saveSchool: async (app) => true,
+  saveSchool: async (app) => ({ ok: false }),
   removeSchool: async (id) => true,
   reloadSaved: async () => {},
 });
@@ -28,12 +29,36 @@ export function remindersToSavedApps(reminders) {
   return apps;
 }
 
+/** Normalize POST /api/reminders body for FE save feedback (planned + current shapes). */
+export function parseSaveReminderResult(body, me) {
+  const reminder = body && typeof body === "object" ? body : null;
+  const apiNeedsEmail =
+    reminder?.needsEmail === true ||
+    reminder?.needs_email === true ||
+    reminder?.emailDeliverable === false ||
+    reminder?.email_deliverable === false;
+  const deadlineIsPlaceholder =
+    reminder?.deadlineIsPlaceholder === true ||
+    reminder?.deadline_is_placeholder === true ||
+    reminder?.isPlaceholderDeadline === true ||
+    reminder?.placeholderDeadline === true;
+  const needsEmail = apiNeedsEmail || !isDeliverableEmail(me?.email, me);
+  return {
+    ok: true,
+    reminder,
+    needsEmail,
+    deadlineIsPlaceholder,
+  };
+}
+
 export function SavedAppsProvider({ children }) {
   const [savedApps, setSavedApps] = useState([]);
   const { me } = useAuth();
   const userId = me?.authenticated ? me.userId ?? me.id : null;
   const userIdRef = useRef(userId);
   userIdRef.current = userId;
+  const meRef = useRef(me);
+  meRef.current = me;
 
   const savedRef = useRef(savedApps);
   const updateSaved = useCallback((next) => {
@@ -66,16 +91,23 @@ export function SavedAppsProvider({ children }) {
     reloadSaved();
   }, [userId, reloadSaved, updateSaved]);
 
-  // Returns false (after rolling back) when the backend didn't save it.
+  // Returns { ok, needsEmail?, deadlineIsPlaceholder?, reminder? }.
+  // School is still saved when needsEmail — outbound mail waits on a real address.
   const saveSchool = useCallback(async (app) => {
     const added = !savedRef.current.find((a) => a.id === app.id);
     if (added) updateSaved((prev) => [app, ...prev]);
     try {
       const res = await apiFetch(`/api/reminders?schoolId=${app.id}`, { method: "POST" });
-      if (res.ok) return true;
+      if (res.ok) {
+        let body = null;
+        try {
+          body = await res.json();
+        } catch (_) {}
+        return parseSaveReminderResult(body, meRef.current);
+      }
     } catch (e) {}
     if (added) updateSaved((prev) => prev.filter((a) => a.id !== app.id));
-    return false;
+    return { ok: false };
   }, [updateSaved]);
 
   // Returns false (after restoring the school) when the backend didn't remove it.

@@ -1,9 +1,14 @@
 import React from "react";
 import { Text } from "react-native";
 import { render, act, waitFor } from "@testing-library/react-native";
-import { SavedAppsProvider, useSavedApps, remindersToSavedApps } from "../SavedAppsContext";
+import {
+  SavedAppsProvider,
+  useSavedApps,
+  remindersToSavedApps,
+  parseSaveReminderResult,
+} from "../SavedAppsContext";
 
-let mockMe = { authenticated: true, userId: 1 };
+let mockMe = { authenticated: true, userId: 1, email: "tester@dev.local" };
 jest.mock("../AuthContext", () => ({
   useAuth: () => ({ me: mockMe }),
 }));
@@ -34,7 +39,7 @@ const renderProvider = () =>
 
 describe("SavedAppsContext", () => {
   beforeEach(() => {
-    mockMe = { authenticated: true, userId: 1 };
+    mockMe = { authenticated: true, userId: 1, email: "tester@dev.local" };
     global.fetch.mockReset();
   });
 
@@ -43,6 +48,21 @@ describe("SavedAppsContext", () => {
       { id: 5, name: "UC San Diego", company: "MS CS", link: "https://ucsd.edu" },
     ]);
     expect(remindersToSavedApps(null)).toEqual([]);
+  });
+
+  it("parseSaveReminderResult flags needsEmail and placeholder deadlines", () => {
+    expect(
+      parseSaveReminderResult({ id: 1 }, { email: "a@github.noreply" }).needsEmail
+    ).toBe(true);
+    expect(
+      parseSaveReminderResult(
+        { id: 1, deadlineIsPlaceholder: true },
+        { email: "you@example.com" }
+      )
+    ).toMatchObject({ ok: true, needsEmail: false, deadlineIsPlaceholder: true });
+    expect(
+      parseSaveReminderResult({ needsEmail: true }, { email: "you@example.com" }).needsEmail
+    ).toBe(true);
   });
 
   it("loads saved schools from /api/reminders for the signed-in user", async () => {
@@ -74,10 +94,27 @@ describe("SavedAppsContext", () => {
       result = await ctx.saveSchool({ id: 9, name: "Rice" });
     });
 
-    expect(result).toBe(true);
+    expect(result).toMatchObject({ ok: true, needsEmail: false });
     expect(await findByText("Rice")).toBeTruthy();
     const post = global.fetch.mock.calls.find(([, o]) => o?.method === "POST");
     expect(post[0]).toMatch(/\/api\/reminders\?schoolId=9$/);
+  });
+
+  it("saveSchool reports needsEmail when the session email is noreply", async () => {
+    mockMe = { authenticated: true, userId: 1, email: "login@github.noreply" };
+    global.fetch.mockImplementation((url, options = {}) =>
+      options.method === "POST" ? ok({ id: 7, schoolId: 9 }) : ok([])
+    );
+    const { findByText } = renderProvider();
+    await findByText("none");
+
+    let result;
+    await act(async () => {
+      result = await ctx.saveSchool({ id: 9, name: "Rice" });
+    });
+
+    expect(result).toMatchObject({ ok: true, needsEmail: true });
+    expect(await findByText("Rice")).toBeTruthy();
   });
 
   it("saveSchool rolls back when the backend rejects it", async () => {
@@ -92,7 +129,7 @@ describe("SavedAppsContext", () => {
       result = await ctx.saveSchool({ id: 9, name: "Rice" });
     });
 
-    expect(result).toBe(false);
+    expect(result).toEqual({ ok: false });
     expect(await findByText("none")).toBeTruthy();
   });
 

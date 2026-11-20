@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useSavedApps } from "../context/SavedAppsContext";
+import UnsaveConfirmModal from "../components/UnsaveConfirmModal";
 
 const PALETTE = {
   blueDark: "#053F7C",
@@ -17,13 +18,18 @@ const PALETTE = {
   gold: "#FFC727",
   white: "#FFFFFF",
   textDark: "#001B33",
-  subtext : "#4B5563",
+  subtext: "#4B5563",
 };
 
 export default function SavedApplicationsScreen() {
   const navigation = useNavigation<any>();
   const { savedApps, removeSchool, reloadSaved } = useSavedApps();
   const [removeError, setRemoveError] = React.useState<string | null>(null);
+  const [unsaveTarget, setUnsaveTarget] = React.useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [unsaveBusy, setUnsaveBusy] = React.useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -31,23 +37,32 @@ export default function SavedApplicationsScreen() {
     }, [reloadSaved])
   );
 
-  const onRemove = async (id: number) => {
+  const requestRemove = (item: { id: number; name: string }) => {
     setRemoveError(null);
-    if (!(await removeSchool(id))) {
-      setRemoveError("We couldn't remove that school. Please try again.");
+    setUnsaveTarget({ id: item.id, name: item.name });
+  };
+
+  const confirmUnsave = async () => {
+    if (!unsaveTarget) return;
+    setUnsaveBusy(true);
+    setRemoveError(null);
+    try {
+      if (!(await removeSchool(unsaveTarget.id))) {
+        setRemoveError("We couldn't remove that school. Please try again.");
+      }
+      setUnsaveTarget(null);
+    } finally {
+      setUnsaveBusy(false);
     }
   };
 
   const renderItem = ({ item }) => (
     <View style={s.card}>
-      {/* {item.urgent && <Text style={s.urgent}>❗</Text>} */}
-
       <View style={{ flex: 1 }}>
         <Text style={s.cardTitle}>{item.name}</Text>
         <Text style={s.cardSub}>{item.company}</Text>
       </View>
 
-      {/* Visit Button */}
       {item.link ? (
         <Pressable style={s.visitBtn} onPress={() => Linking.openURL(item.link)}>
           <Text style={s.visitBtnText}>Visit</Text>
@@ -68,10 +83,9 @@ export default function SavedApplicationsScreen() {
         <Text style={s.statementBtnText}>Statement</Text>
       </Pressable>
 
-      {/* Remove Button */}
       <Pressable
         style={s.removeBtn}
-        onPress={() => onRemove(item.id)}
+        onPress={() => requestRemove(item)}
         accessibilityLabel={`Remove ${item.name}`}
       >
         <Text style={s.removeBtnText}>Remove</Text>
@@ -81,7 +95,6 @@ export default function SavedApplicationsScreen() {
 
   return (
     <View style={s.screen}>
-      {/* HEADER */}
       <View style={s.header}>
         <View style={{ width: 40 }} />
         <Text style={s.headerTitle}>Saved Apps</Text>
@@ -111,15 +124,22 @@ export default function SavedApplicationsScreen() {
           renderItem={renderItem}
         />
       )}
+
+      <UnsaveConfirmModal
+        visible={!!unsaveTarget}
+        schoolName={unsaveTarget?.name}
+        onCancel={() => !unsaveBusy && setUnsaveTarget(null)}
+        onConfirm={confirmUnsave}
+        busy={unsaveBusy}
+      />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  screen: { 
-    flex: 1, 
-    backgroundColor: 
-    PALETTE.white 
+  screen: {
+    flex: 1,
+    backgroundColor: PALETTE.white,
   },
   header: {
     paddingTop: 40,
@@ -177,11 +197,6 @@ const s = StyleSheet.create({
     borderColor: "#DCE8F2",
     marginBottom: 14,
   },
-  urgent: {
-    fontSize: 20,
-    color: "red",
-    marginRight: 8,
-  },
   cardTitle: {
     fontSize: 16,
     fontWeight: "700",
@@ -190,16 +205,6 @@ const s = StyleSheet.create({
   cardSub: {
     color: PALETTE.subtext,
     marginTop: 3,
-  },
-  applyBtn: {
-    backgroundColor: PALETTE.blue,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  applyBtnText: {
-    color: PALETTE.white,
-    fontWeight: "700",
   },
   visitBtn: {
     backgroundColor: PALETTE.blue,
@@ -228,7 +233,6 @@ const s = StyleSheet.create({
     borderRadius: 10,
   },
   removeBtnText: {
-    // color: PALETTE.danger,
     fontWeight: "700",
   },
 });

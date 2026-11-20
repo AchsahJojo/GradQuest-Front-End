@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { apiFetch } from "../lib/api";
+import UnsaveConfirmModal from "../components/UnsaveConfirmModal";
 
 // Same local-date parse as DashboardScreen: "2026-12-01" must stay December 1.
 // new Date("2026-12-01") is UTC midnight, which is November 30 in Pacific time.
@@ -39,6 +40,11 @@ export default function ReminderScreen() {
   const { me } = useAuth();
   const [reminders, setReminders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [unsaveTarget, setUnsaveTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [unsaveBusy, setUnsaveBusy] = useState(false);
 
   // Fetch reminders from API
   const fetchReminders = async () => {
@@ -112,10 +118,20 @@ export default function ReminderScreen() {
     return { ...item, urgent: diff <= TWO_WEEKS_MS && diff > 0 };
   });
 
-  // deliting reminder function
-  const deleteReminder = async (reminderId: string) => {
+  const requestDelete = (item: { id: string; title?: string }) => {
+    const name =
+      (item.title || "")
+        .replace(/^Application deadline:\s*/i, "")
+        .trim() || "this school";
+    setUnsaveTarget({ id: item.id, name });
+  };
+
+  // deleting reminder (unsaves school + cancels reminder emails)
+  const confirmDeleteReminder = async () => {
+    if (!unsaveTarget) return;
+    setUnsaveBusy(true);
     try {
-      const res = await apiFetch(`/api/reminders/${reminderId}`, {
+      const res = await apiFetch(`/api/reminders/${unsaveTarget.id}`, {
         method: "DELETE",
       });
 
@@ -125,10 +141,12 @@ export default function ReminderScreen() {
         return;
       }
 
-      // quick refresh reminders after deletion
+      setUnsaveTarget(null);
       fetchReminders();
     } catch (err) {
       console.warn("Error deleting reminder:", err);
+    } finally {
+      setUnsaveBusy(false);
     }
   };
 
@@ -190,8 +208,9 @@ export default function ReminderScreen() {
             <Text style={s.completeButtonText}>✓</Text>
           </Pressable>
           <Pressable
-            onPress={() => deleteReminder(item.id)}
+            onPress={() => requestDelete(item)}
             style={s.deleteButton}
+            accessibilityLabel={`Unsave ${item.title || "reminder"}`}
           >
             <Text style={s.deleteButtonText}>×</Text>
           </Pressable>
@@ -229,6 +248,14 @@ export default function ReminderScreen() {
             {loading ? "Loading reminders..." : "No reminders yet."}
           </Text>
         }
+      />
+
+      <UnsaveConfirmModal
+        visible={!!unsaveTarget}
+        schoolName={unsaveTarget?.name}
+        onCancel={() => !unsaveBusy && setUnsaveTarget(null)}
+        onConfirm={confirmDeleteReminder}
+        busy={unsaveBusy}
       />
     </SafeAreaView>
   );
