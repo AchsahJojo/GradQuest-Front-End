@@ -22,8 +22,30 @@ const PALETTE = {
 };
 
 const DRAFT_LABEL = "Draft outline — edit before you use it";
+const UNVERIFIED_FACULTY_SUBTITLE = "Research interests not verified.";
 const WEAK_OVERLAP =
   "We found little connection between your résumé and this program's faculty or courses. The draft will leave those parts for you to write.";
+const DEFAULT_VISIBLE_MATCHES = 8;
+
+function matchSubtitle(pair) {
+  if (typeof pair.subtitle === "string" && pair.subtitle.trim()) return pair.subtitle.trim();
+  if (pair.factKind === "faculty") {
+    if (pair.researchVerified === false) return UNVERIFIED_FACULTY_SUBTITLE;
+    const detail = typeof pair.factDetail === "string" ? pair.factDetail.trim() : "";
+    return detail || UNVERIFIED_FACULTY_SUBTITLE;
+  }
+  return "";
+}
+
+function matchQuotes(pair) {
+  if (Array.isArray(pair.resumeQuotes) && pair.resumeQuotes.length > 0) {
+    return pair.resumeQuotes.filter((quote) => typeof quote === "string" && quote.trim());
+  }
+  if (typeof pair.resumeText === "string" && pair.resumeText.trim()) {
+    return pair.resumeText.split("\n").map((line) => line.trim()).filter(Boolean);
+  }
+  return [];
+}
 
 async function failureMessage(res, fallback) {
   try {
@@ -60,6 +82,7 @@ export default function StatementScreen() {
   const [draftPersisted, setDraftPersisted] = useState(false);
   const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
   const [draftNote, setDraftNote] = useState("");
+  const [showAllMatches, setShowAllMatches] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,6 +307,7 @@ export default function StatementScreen() {
       const body = await res.json();
       setReport(body);
       setRemovedIds([]);
+      setShowAllMatches(false);
     } catch {
       setActionError("Matches could not be loaded right now.");
     } finally {
@@ -398,11 +422,11 @@ export default function StatementScreen() {
         <View>
           {noStatement ? (
             <Text style={s.note}>
-              You can still draft an optional motivation paragraph. It is an outline to edit, not an essay to submit.
+              You can still draft an optional motivation outline. It is scaffolding to edit, not an essay to submit.
             </Text>
           ) : (
             <Text style={s.note}>
-              Upload a resume and, if the application prompt is behind a login, paste that prompt. The draft is a full statement you can edit.
+              Upload a resume and, if the application prompt is behind a login, paste that prompt. Draft outline builds scaffolding you can edit.
             </Text>
           )}
 
@@ -443,33 +467,67 @@ export default function StatementScreen() {
             <Text style={s.secondaryText}>Find matches</Text>
           </Pressable>
           {report?.weak ? <Text style={s.note}>{WEAK_OVERLAP}</Text> : null}
-          {report?.pairs?.map((pair) => {
-            const removed = removedIds.includes(pair.pairId);
+          {(() => {
+            const pairs = report?.pairs ?? [];
+            const visibleCount =
+              typeof report?.visibleCount === "number" && report.visibleCount > 0
+                ? report.visibleCount
+                : DEFAULT_VISIBLE_MATCHES;
+            const shown = showAllMatches ? pairs : pairs.slice(0, visibleCount);
+            const hiddenCount = Math.max(0, pairs.length - visibleCount);
             return (
-              <View key={pair.pairId} style={s.matchCard}>
-                <Text style={s.matchName}>{pair.factName}</Text>
-                <Text style={s.note}>{pair.resumeText}</Text>
-                <Text
-                  style={s.link}
-                  accessibilityRole="link"
-                  onPress={() => Linking.openURL(pair.sourceUrl)}
-                >
-                  {pair.sourceUrl}
-                </Text>
-                <Pressable
-                  style={s.secondary}
-                  onPress={() => togglePair(pair.pairId)}
-                  accessibilityLabel={`${removed ? "Restore" : "Remove"} ${pair.factName}`}
-                >
-                  <Text style={s.secondaryText}>{removed ? "Restore" : "Remove"}</Text>
-                </Pressable>
-              </View>
+              <>
+                {shown.map((pair) => {
+                  const removed = removedIds.includes(pair.pairId);
+                  const subtitle = matchSubtitle(pair);
+                  const quotes = matchQuotes(pair);
+                  return (
+                    <View key={pair.pairId} style={s.matchCard}>
+                      <Text style={s.matchName}>{pair.factName}</Text>
+                      {subtitle ? <Text style={s.matchSubtitle}>{subtitle}</Text> : null}
+                      {quotes.map((quote, index) => (
+                        <Text key={`${pair.pairId}-q-${index}`} style={s.note}>
+                          {quote}
+                        </Text>
+                      ))}
+                      <Text
+                        style={s.link}
+                        accessibilityRole="link"
+                        onPress={() => Linking.openURL(pair.sourceUrl)}
+                      >
+                        {pair.sourceUrl}
+                      </Text>
+                      <Pressable
+                        style={s.secondary}
+                        onPress={() => togglePair(pair.pairId)}
+                        accessibilityLabel={`${removed ? "Restore" : "Remove"} ${pair.factName}`}
+                      >
+                        <Text style={s.secondaryText}>{removed ? "Restore" : "Remove"}</Text>
+                      </Pressable>
+                    </View>
+                  );
+                })}
+                {hiddenCount > 0 && !showAllMatches ? (
+                  <Pressable
+                    style={s.secondary}
+                    onPress={() => setShowAllMatches(true)}
+                    accessibilityLabel="Show all"
+                  >
+                    <Text style={s.secondaryText}>Show all</Text>
+                  </Pressable>
+                ) : null}
+              </>
             );
-          })}
+          })()}
 
-          <Pressable style={s.primary} onPress={onDraft} disabled={busy || matching}>
+          <Pressable
+            style={s.primary}
+            onPress={onDraft}
+            disabled={busy || matching}
+            accessibilityLabel={noStatement ? "Draft optional motivation" : "Draft outline"}
+          >
             <Text style={s.primaryText}>
-              {busy ? "Drafting..." : noStatement ? "Draft optional motivation" : "Draft full statement"}
+              {busy ? "Drafting..." : noStatement ? "Draft optional motivation" : "Draft outline"}
             </Text>
           </Pressable>
           {draftPersisted && draftNote === "Saved draft" ? (
@@ -605,5 +663,6 @@ const s = StyleSheet.create({
     padding: 12,
   },
   matchName: { fontWeight: "800", color: PALETTE.blueDark },
+  matchSubtitle: { marginTop: 4, color: PALETTE.subtext, lineHeight: 20 },
   link: { marginTop: 6, color: PALETTE.blue, fontWeight: "700" },
 });

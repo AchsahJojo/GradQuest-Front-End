@@ -304,14 +304,29 @@ export default function ProfileIntake() {
     };
   }, [me]);
 
-  // expectedGrad and state are NOT NULL in student_preferences.
+  // Save requires: Target Country, Expected Graduation Date, Location State, Major, Budget > 0, GPA 0–4.
   function validationError(): string | null {
+    if (!country) return "Choose a target country.";
     const grad = gradDate.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(grad) || Number.isNaN(Date.parse(grad))) {
       return "Enter your expected graduation date as YYYY-MM-DD.";
     }
     if (!stateLocation) return "Choose a location state.";
+    if (!major.trim()) return "Choose a major.";
+    const parsedBudget = parseFloat(budgetText);
+    if (!Number.isFinite(parsedBudget) || parsedBudget <= 0) {
+      return "Enter a budget greater than 0.";
+    }
+    const parsedGpa = parseFloat(gpaText);
+    if (!Number.isFinite(parsedGpa) || parsedGpa < 0 || parsedGpa > 4) {
+      return "Enter a GPA between 0 and 4.";
+    }
     return null;
+  }
+
+  /** Required fields get a trailing asterisk; optional fields stay plain. */
+  function fieldLabel(name: string, required: boolean): string {
+    return required ? `${name} *` : name;
   }
 
   async function handleSubmit() {
@@ -462,16 +477,19 @@ export default function ProfileIntake() {
           <Text style={styles.subtitle}>
             Tell us about your application preferences
           </Text>
+          <Text style={styles.legend} accessibilityLabel="Field requirement legend">
+            * = required
+          </Text>
 
           <SelectField
-            label="Target Country"
+            label={fieldLabel("Target Country", true)}
             value={country}
             options={countries}
             onChange={setCountry}
           />
 
           <View style={styles.field}>
-            <Text style={styles.label}>Budget (USD)</Text>
+            <Text style={styles.label}>{fieldLabel("Budget (USD)", true)}</Text>
             <TextInput
               accessibilityLabel="Budget (USD)"
               style={styles.input}
@@ -488,14 +506,14 @@ export default function ProfileIntake() {
           </View>
 
           <SelectField
-            label="School Year to Apply"
+            label={fieldLabel("School Year to Apply", false)}
             value={applyYear}
             options={years}
             onChange={setApplyYear}
           />
 
           <View style={styles.field}>
-            <Text style={styles.label}>Expected Graduation Date (required)</Text>
+            <Text style={styles.label}>{fieldLabel("Expected Graduation Date", true)}</Text>
             <TextInput
               accessibilityLabel="Expected Graduation Date"
               style={styles.input}
@@ -506,7 +524,7 @@ export default function ProfileIntake() {
           </View>
 
           <SelectField
-            label="Private or Public"
+            label={fieldLabel("Private or Public", false)}
             value={
               isPrivate ? "Private" : isPrivate === false ? "Public" : null
             }
@@ -515,7 +533,7 @@ export default function ProfileIntake() {
           />
 
           <SelectField
-            label="Location State (required)"
+            label={fieldLabel("Location State", true)}
             value={stateLocation}
             options={states}
             onChange={setStateLocation}
@@ -525,17 +543,17 @@ export default function ProfileIntake() {
             value={major}
             options={majorOptions}
             onChange={setMajor}
-            label={""}
+            label={fieldLabel("Major", true)}
           />
 
           <View style={styles.inlineField}>
-            <Text style={styles.label}>Capstone Required?</Text>
+            <Text style={styles.label}>{fieldLabel("Capstone Required?", false)}</Text>
             <Switch value={capstone} onValueChange={setCapstone} />
           </View>
 
           <View style={styles.inlineField}>
             <Text style={styles.label}>
-              Open to GRE-required programs?
+              {fieldLabel("Open to GRE-required programs?", false)}
             </Text>
             <Switch value={gre} onValueChange={setGre} />
           </View>
@@ -546,7 +564,7 @@ export default function ProfileIntake() {
           </Text>
 
           <View style={styles.inlineField}>
-            <Text style={styles.label}>International student (F-1)?</Text>
+            <Text style={styles.label}>{fieldLabel("International student (F-1)?", false)}</Text>
             <Switch
               value={isInternational}
               onValueChange={setIsInternational}
@@ -559,35 +577,35 @@ export default function ProfileIntake() {
           </Text>
 
           <SelectField
-            label="Desired start term (optional)"
+            label={fieldLabel("Desired start term", false)}
             value={desiredTerm}
             options={termOptions}
             onChange={setDesiredTerm}
           />
 
           <SelectField
-            label="Desired start year (optional)"
+            label={fieldLabel("Desired start year", false)}
             value={desiredStartYear}
             options={startYearOptions}
             onChange={setDesiredStartYear}
           />
 
           <SelectField
-            label="Full-time or Part-time"
+            label={fieldLabel("Full-time or Part-time", false)}
             value={timeType}
             options={timeOptions}
             onChange={setTimeType}
           />
 
           <SelectField
-            label="Program Format"
+            label={fieldLabel("Program Format", false)}
             value={format}
             options={formatOptions}
             onChange={setFormat}
           />
 
           <View style={styles.field}>
-            <Text style={styles.label}>GPA (e.g., 3.5)</Text>
+            <Text style={styles.label}>{fieldLabel("GPA", true)}</Text>
             <TextInput
               accessibilityLabel="GPA"
               style={styles.input}
@@ -640,7 +658,13 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     color: "#555555",
-    marginBottom: 12,
+    marginBottom: 8,
+  },
+  legend: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 16,
+    lineHeight: 18,
   },
   hint: {
     fontSize: 12,

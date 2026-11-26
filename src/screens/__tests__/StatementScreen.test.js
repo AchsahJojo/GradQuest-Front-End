@@ -98,7 +98,7 @@ describe("StatementScreen", () => {
     const { findByText, findByDisplayValue, getByLabelText } = render(<StatementScreen />);
     expect(await findByText("Paste the prompt if you have it. GradQuest will not guess it.")).toBeTruthy();
     fireEvent.changeText(getByLabelText("Resume text"), "Built a compiler");
-    fireEvent.press(await findByText("Draft full statement"));
+    fireEvent.press(await findByText("Draft outline"));
 
     expect(await findByText("Draft outline — edit before you use it")).toBeTruthy();
     const draftBox = await findByDisplayValue(/\[R1\]/);
@@ -210,22 +210,29 @@ describe("StatementScreen", () => {
           weak: false,
           unmatchedKinds: [],
           verifiedAsOf: "2026-03-01T00:00:00Z",
+          visibleCount: 8,
           pairs: [
             {
-              pairId: "0:faculty-ada",
+              pairId: "faculty-ada",
               resumeText: "I studied distributed systems in a lab.",
+              resumeQuotes: ["I studied distributed systems in a lab."],
               factKind: "faculty",
               factName: "Ada Lovelace",
               factDetail: "Studies formal methods.",
+              subtitle: "Studies formal methods.",
+              researchVerified: true,
               sourceUrl: "https://catalog.calpoly.edu/faculty/ada",
               reason: "Both discuss formal methods.",
             },
             {
-              pairId: "1:course-compilers",
+              pairId: "course-compilers",
               resumeText: "I built a compiler for a class.",
+              resumeQuotes: ["I built a compiler for a class."],
               factKind: "course",
               factName: "Compilers",
               factDetail: "A graduate compilers course.",
+              subtitle: "",
+              researchVerified: true,
               sourceUrl: "https://catalog.calpoly.edu/courses/compilers",
               reason: "Both discuss compilers.",
             },
@@ -241,6 +248,7 @@ describe("StatementScreen", () => {
     const { findByText, getByLabelText, queryByText } = render(<StatementScreen />);
     fireEvent.press(await findByText("Find matches"));
     expect(await findByText("Ada Lovelace")).toBeTruthy();
+    expect(await findByText("Studies formal methods.")).toBeTruthy();
     expect(await findByText("I studied distributed systems in a lab.")).toBeTruthy();
     expect(await findByText("https://catalog.calpoly.edu/faculty/ada")).toBeTruthy();
     expect(await findByText("Compilers")).toBeTruthy();
@@ -253,12 +261,65 @@ describe("StatementScreen", () => {
     ).toBeNull();
 
     fireEvent.press(getByLabelText("Remove Ada Lovelace"));
-    fireEvent.press(await findByText("Draft full statement"));
+    fireEvent.press(await findByText("Draft outline"));
 
     await waitFor(() => {
       const draftCall = global.fetch.mock.calls.find(([url]) => String(url).endsWith("/api/sop/draft"));
-      expect(JSON.parse(draftCall[1].body).pairIds).toEqual(["1:course-compilers"]);
+      expect(JSON.parse(draftCall[1].body).pairIds).toEqual(["course-compilers"]);
     });
+  });
+
+  test("shows Research interests not verified for thin faculty and Show all beyond eight cards", async () => {
+    const pairs = [
+      {
+        pairId: "thin-fac",
+        resumeText: "I studied computer science.",
+        resumeQuotes: ["I studied computer science."],
+        factKind: "faculty",
+        factName: "Jedidiah Crandall",
+        factDetail: "",
+        subtitle: "Research interests not verified.",
+        researchVerified: false,
+        sourceUrl: "https://example.edu/thin",
+        reason: "Name listed.",
+        score: 0.99,
+      },
+      ...Array.from({ length: 9 }, (_, index) => ({
+        pairId: `course-${index}`,
+        resumeText: `Resume quote ${index}`,
+        resumeQuotes: [`Resume quote ${index}`],
+        factKind: "course",
+        factName: `Course ${index}`,
+        factDetail: `Detail ${index}`,
+        subtitle: "",
+        researchVerified: true,
+        sourceUrl: `https://example.edu/c${index}`,
+        reason: "topic",
+        score: 0.9 - index * 0.01,
+      })),
+    ];
+    global.fetch.mockImplementation((url) => {
+      const href = String(url);
+      if (href.endsWith("/api/sop/programs")) {
+        return jsonResponse({ sopRequired: true, pageStatus: "ok", message: "Read the public program page." });
+      }
+      if (href.endsWith("/api/sop/resume")) return jsonResponse({ stored: true, chunks: 1 });
+      if (href.endsWith("/api/sop/overlap")) {
+        return jsonResponse({ weak: false, unmatchedKinds: [], verifiedAsOf: "2026-03-01T00:00:00Z", visibleCount: 8, pairs });
+      }
+      return jsonResponse({}, false);
+    });
+
+    const { findByText, queryByText, getByLabelText } = render(<StatementScreen />);
+    fireEvent.press(await findByText("Find matches"));
+    expect(await findByText("Jedidiah Crandall")).toBeTruthy();
+    expect(await findByText("Research interests not verified.")).toBeTruthy();
+    expect(await findByText("Course 0")).toBeTruthy();
+    expect(queryByText("Course 7")).toBeNull();
+    expect(queryByText("Course 8")).toBeNull();
+    fireEvent.press(getByLabelText("Show all"));
+    expect(await findByText("Course 7")).toBeTruthy();
+    expect(await findByText("Course 8")).toBeTruthy();
   });
 
   test("does not send pairIds before a report has loaded", async () => {
@@ -274,7 +335,7 @@ describe("StatementScreen", () => {
     });
 
     const { findByText } = render(<StatementScreen />);
-    fireEvent.press(await findByText("Draft full statement"));
+    fireEvent.press(await findByText("Draft outline"));
 
     await waitFor(() => {
       const draftCall = global.fetch.mock.calls.find(([url]) => String(url).endsWith("/api/sop/draft"));
@@ -389,7 +450,7 @@ describe("StatementScreen", () => {
     });
 
     const { findByText, findByLabelText } = render(<StatementScreen />);
-    fireEvent.press(await findByText("Draft full statement"));
+    fireEvent.press(await findByText("Draft outline"));
     const draftBox = await findByLabelText("Draft outline — edit before you use it");
     fireEvent.changeText(draftBox, "Edited draft text.");
     fireEvent.press(await findByLabelText("Save draft"));
@@ -468,7 +529,7 @@ describe("StatementScreen", () => {
     });
 
     const { findByText, findByLabelText, queryByLabelText } = render(<StatementScreen />);
-    fireEvent.press(await findByText("Draft full statement"));
+    fireEvent.press(await findByText("Draft outline"));
     expect(await findByLabelText("Save draft")).toBeTruthy();
     expect(queryByLabelText("Delete draft")).toBeNull();
 

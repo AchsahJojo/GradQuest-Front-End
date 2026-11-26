@@ -21,6 +21,7 @@ const SAVED = {
   state: "CA",
   programType: "Computer Science",
   major: "Computer Science",
+  targetCountry: "United States",
   enrollmentType: "FULL_TIME",
   modality: "IN_PERSON",
   gpa: 3.5,
@@ -52,15 +53,31 @@ describe("ProfileIntake", () => {
   test("renders the full intake form", () => {
     const { getByText, getByLabelText } = render(<ProfileIntake />);
     expect(getByText("Profile Intake")).toBeTruthy();
-    expect(getByText("Location State (required)")).toBeTruthy();
+    expect(getByText("Location State *")).toBeTruthy();
+    expect(getByText("Target Country *")).toBeTruthy();
+    expect(getByText("* = required")).toBeTruthy();
     expect(getByLabelText("Expected Graduation Date")).toBeTruthy();
     expect(getByText("Save profile")).toBeTruthy();
+  });
+
+  test("marks required fields with an asterisk and leaves optional labels plain", () => {
+    const screen = render(<ProfileIntake />);
+    expect(selectByLabel(screen, "Target Country *")).toBeTruthy();
+    expect(selectByLabel(screen, "Location State *")).toBeTruthy();
+    expect(selectByLabel(screen, "Major *")).toBeTruthy();
+    expect(screen.getByText("Budget (USD) *")).toBeTruthy();
+    expect(screen.getByText("Expected Graduation Date *")).toBeTruthy();
+    expect(screen.getByText("GPA *")).toBeTruthy();
+    expect(selectByLabel(screen, "School Year to Apply")).toBeTruthy();
+    expect(selectByLabel(screen, "Desired start term")).toBeTruthy();
+    expect(screen.queryByText(/Optional/)).toBeNull();
+    expect(screen.queryByText(/\(Required\)/)).toBeNull();
   });
 
   test("offers apply years 2027-2029 and catalog states", () => {
     const screen = render(<ProfileIntake />);
     const year = selectByLabel(screen, "School Year to Apply");
-    const state = selectByLabel(screen, "Location State (required)");
+    const state = selectByLabel(screen, "Location State *");
 
     expect(year.props.value).toBe("2027");
     expect(year.props.options).toEqual(["2027", "2028", "2029"]);
@@ -105,23 +122,32 @@ describe("ProfileIntake", () => {
     const [saveUrl, saveOptions] = global.fetch.mock.calls.find(([, o]) => o?.method === "POST");
     expect(saveUrl).toMatch(/\/api\/preferences$/);
     expect(saveOptions).toMatchObject({ credentials: "include" });
-    expect(JSON.parse(saveOptions.body)).toMatchObject({ state: "CA", expectedGrad: "2028-05-15", schoolType: "PUBLIC" });
+    expect(JSON.parse(saveOptions.body)).toMatchObject({
+      state: "CA",
+      expectedGrad: "2028-05-15",
+      schoolType: "PUBLIC",
+      targetCountry: "United States",
+    });
     expect(saveOptions.body).not.toMatch(/userId/);
   });
 
   const postCalls = () => global.fetch.mock.calls.filter(([, o]) => o?.method === "POST");
 
   test("a blank graduation date blocks the save with a message", async () => {
-    const { getByText, findByText } = render(<ProfileIntake />);
-    fireEvent.press(getByText("Save profile"));
+    const screen = render(<ProfileIntake />);
+    const country = selectByLabel(screen, "Target Country *");
+    fireEvent(country, "onChange", "United States");
+    fireEvent.press(screen.getByText("Save profile"));
 
-    expect(await findByText("Enter your expected graduation date as YYYY-MM-DD.")).toBeTruthy();
+    expect(await screen.findByText("Enter your expected graduation date as YYYY-MM-DD.")).toBeTruthy();
     expect(postCalls()).toHaveLength(0);
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   test("an invalid graduation date blocks the save", async () => {
-    const { getByText, getByLabelText, findByText } = render(<ProfileIntake />);
+    const screen = render(<ProfileIntake />);
+    const { getByText, getByLabelText, findByText } = screen;
+    fireEvent(selectByLabel(screen, "Target Country *"), "onChange", "United States");
     fireEvent.changeText(getByLabelText("Expected Graduation Date"), "May 2028");
     fireEvent.press(getByText("Save profile"));
 
@@ -129,12 +155,47 @@ describe("ProfileIntake", () => {
     expect(postCalls()).toHaveLength(0);
   });
 
+  test("a missing country blocks the save with a message", async () => {
+    const { getByText, findByText } = render(<ProfileIntake />);
+    fireEvent.press(getByText("Save profile"));
+
+    expect(await findByText("Choose a target country.")).toBeTruthy();
+    expect(postCalls()).toHaveLength(0);
+  });
+
   test("a missing state blocks the save with a message", async () => {
-    const { getByText, getByLabelText, findByText } = render(<ProfileIntake />);
+    const screen = render(<ProfileIntake />);
+    const { getByText, getByLabelText, findByText } = screen;
+    fireEvent(selectByLabel(screen, "Target Country *"), "onChange", "United States");
     fireEvent.changeText(getByLabelText("Expected Graduation Date"), "2028-05-15");
     fireEvent.press(getByText("Save profile"));
 
     expect(await findByText("Choose a location state.")).toBeTruthy();
+    expect(postCalls()).toHaveLength(0);
+  });
+
+  test("missing major, budget, or GPA blocks save", async () => {
+    const screen = render(<ProfileIntake />);
+    const { getByText, getByLabelText, findByText } = screen;
+    fireEvent(selectByLabel(screen, "Target Country *"), "onChange", "United States");
+    fireEvent.changeText(getByLabelText("Expected Graduation Date"), "2028-05-15");
+    fireEvent(selectByLabel(screen, "Location State *"), "onChange", "CA");
+    fireEvent.press(getByText("Save profile"));
+    expect(await findByText("Choose a major.")).toBeTruthy();
+    expect(postCalls()).toHaveLength(0);
+
+    fireEvent(selectByLabel(screen, "Major *"), "onChange", "Computer Science");
+    fireEvent.press(getByText("Save profile"));
+    expect(await findByText("Enter a budget greater than 0.")).toBeTruthy();
+
+    fireEvent.changeText(getByLabelText("Budget (USD)"), "15000");
+    fireEvent.press(getByText("Save profile"));
+    expect(await findByText("Enter a GPA between 0 and 4.")).toBeTruthy();
+    expect(postCalls()).toHaveLength(0);
+
+    fireEvent.changeText(getByLabelText("GPA"), "4.5");
+    fireEvent.press(getByText("Save profile"));
+    expect(await findByText("Enter a GPA between 0 and 4.")).toBeTruthy();
     expect(postCalls()).toHaveLength(0);
   });
 
